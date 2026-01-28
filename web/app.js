@@ -2,16 +2,86 @@
 const SUPABASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_URL : '';
 const SUPABASE_ANON_KEY = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_ANON_KEY : '';
 
+// KST (Korea Standard Time) 변환 함수들
+
+// UTC ISO 문자열을 KST 날짜 문자열 (YYYY-MM-DD)로 변환
+function toKSTDateString(dateInput) {
+    if (!dateInput) return '';
+    const date = new Date(dateInput);
+    // toLocaleString을 사용하여 KST로 변환
+    const kstString = date.toLocaleString('en-CA', { timeZone: 'Asia/Seoul' });
+    // en-CA 로케일은 YYYY-MM-DD 형식 반환
+    return kstString.split(',')[0];
+}
+
+// 현재 KST 날짜 문자열 (YYYY-MM-DD) 반환
+function getKSTToday() {
+    const now = new Date();
+    // toLocaleString을 사용하여 KST로 변환
+    const kstString = now.toLocaleString('en-CA', { timeZone: 'Asia/Seoul' });
+    return kstString.split(',')[0];
+}
+
+// KST 기준 현재 Date 객체 반환 (시간 비교용)
+function getKSTNow() {
+    // 현재 시간을 그대로 반환 (Date 객체는 항상 UTC 기반)
+    // 시간 비교는 UTC 기준으로 해도 결과는 동일
+    return new Date();
+}
+
+// UTC 날짜를 KST 시간 (HH:MM) 문자열로 변환
+function getKSTTime(dateInput) {
+    if (!dateInput) return '';
+    const date = new Date(dateInput);
+    const kstString = date.toLocaleString('en-US', {
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+    return kstString;
+}
+
+// 시간대별 클래스 반환 (dawn: 0-6시, day: 6-18시, night: 18-24시)
+function getTimeClass(timeString) {
+    const hour = parseInt(timeString.split(':')[0]);
+    if (hour >= 0 && hour < 6) return 'dawn';
+    if (hour >= 6 && hour < 18) return 'day';
+    return 'night';
+}
+
+// 날짜에 일수 더하기
+function addDays(dateStr, days) {
+    const date = new Date(dateStr + 'T00:00:00');
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// 주간 범위 계산 (시작일부터 N주)
+function getWeekRange(startDate, weeks) {
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(start);
+    end.setDate(end.getDate() + (weeks * 7) - 1);
+    return {
+        start: toKSTDateString(start),
+        end: toKSTDateString(end)
+    };
+}
+
 // State
 let supabaseClient = null;
 let allEvents = [];
 let currentDate = new Date();
+let calendarOverviewStartWeek = 1; // 0 = current week, 1 = next week, etc.
 
-// Filter state
+// Filter state (기본값: 거래량 $10K 이상만 표시)
 let filters = {
     tags: [],
     timeRemaining: 'all',
-    minVolume: 0,
+    minVolume: 10000,
     minLiquidity: 0
 };
 
@@ -43,6 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initSupabase();
     setupEventListeners();
     await loadData();
+    updateActiveFiltersDisplay(); // 기본 필터 UI 표시
     renderCalendar();
 });
 
@@ -75,14 +146,16 @@ function setupEventListeners() {
         });
     }
 
-    // Month navigation
-    document.getElementById('prevMonth').addEventListener('click', () => {
-        currentDate.setMonth(currentDate.getMonth() - 1);
-        renderCalendar();
+    // Calendar Overview navigation
+    document.getElementById('prevWeek').addEventListener('click', () => {
+        if (calendarOverviewStartWeek > 1) {
+            calendarOverviewStartWeek--;
+            renderCalendar();
+        }
     });
 
-    document.getElementById('nextMonth').addEventListener('click', () => {
-        currentDate.setMonth(currentDate.getMonth() + 1);
+    document.getElementById('nextWeek').addEventListener('click', () => {
+        calendarOverviewStartWeek++;
         renderCalendar();
     });
 
@@ -373,7 +446,7 @@ function resetFilters() {
     tempFilters = {
         tags: [],
         timeRemaining: 'all',
-        minVolume: 0,
+        minVolume: 10000,
         minLiquidity: 0
     };
     renderFilterTags();
@@ -384,7 +457,7 @@ function clearAllFilters() {
     filters = {
         tags: [],
         timeRemaining: 'all',
-        minVolume: 0,
+        minVolume: 10000,
         minLiquidity: 0
     };
     updateActiveFiltersDisplay();
@@ -463,7 +536,86 @@ function updateActiveFiltersDisplay() {
     });
 }
 
-function getFilteredEvents(searchQuery = '') {
+// 제목에서 숫자/금액을 제거하여 이벤트 그룹 식별자 추출
+function extractEventGroupKey(title) {
+    if (!title) return '';
+
+    // 숫자 패턴들을 정규화하여 같은 토픽의 마켓들을 그룹화
+    let normalized = title
+        // "at least 25", "at least 27" -> "at least X"
+        .replace(/at least \d+(\.\d+)?/gi, 'at least X')
+        // "over 100", "under 50" -> "over X", "under X"
+        .replace(/(over|under|above|below|more than|less than)\s*\d+(\.\d+)?/gi, '$1 X')
+        // "$1,000", "$10K", "$1M" -> "$X"
+        .replace(/\$[\d,]+(\.\d+)?[KMB]?/gi, '$X')
+        // "25%", "30%" -> "X%"
+        .replace(/\d+(\.\d+)?%/g, 'X%')
+        // 날짜 패턴 "1/27", "01/27/2026"
+        .replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, 'DATE')
+        // 순수 숫자 (남은 것들) "round 1", "week 5"
+        .replace(/\b\d+(\.\d+)?\b/g, 'X')
+        .trim()
+        .toLowerCase();
+
+    return normalized;
+}
+
+// 제목 기준으로 이벤트 그룹화 - 가장 거래량 높은 마켓만 선택
+function groupEventsBySlug(events) {
+    const titleGroups = {};
+
+    events.forEach(event => {
+        // 제목에서 그룹 키 추출 (숫자 제거)
+        const groupKey = extractEventGroupKey(event.title);
+        if (!titleGroups[groupKey]) {
+            titleGroups[groupKey] = [];
+        }
+        titleGroups[groupKey].push(event);
+    });
+
+    // 각 그룹에서 가장 거래량이 높은 마켓 선택
+    const groupedEvents = [];
+    Object.entries(titleGroups).forEach(([groupKey, markets]) => {
+        if (markets.length === 1) {
+            // 마켓이 1개면 그대로 사용
+            groupedEvents.push(markets[0]);
+        } else {
+            // 여러 마켓이 있으면 거래량 기준 정렬 후 가장 높은 것 선택
+            markets.sort((a, b) => (parseFloat(b.volume) || 0) - (parseFloat(a.volume) || 0));
+            const topMarket = { ...markets[0] };
+            // 그룹 내 마켓 수 표시용
+            topMarket._marketCount = markets.length;
+            // 그룹 전체 거래량 합산
+            topMarket._totalVolume = markets.reduce((sum, m) => sum + (parseFloat(m.volume) || 0), 0);
+            // 검색용 키워드 저장 (그룹화된 제목에서 공통 부분 추출)
+            topMarket._searchQuery = extractSearchQuery(markets[0].title);
+            groupedEvents.push(topMarket);
+        }
+    });
+
+    return groupedEvents;
+}
+
+// 검색 쿼리용 제목 추출 (핵심 키워드만)
+function extractSearchQuery(title) {
+    if (!title) return '';
+    // "Will X score at least Y" -> "X"
+    // 질문 형식에서 핵심 주제 추출
+    let query = title
+        .replace(/^(will|does|is|are|can|has|have|do)\s+/i, '')
+        .replace(/\s+(score|reach|hit|get|be|have|win|lose).*/i, '')
+        .replace(/\?.*$/, '')
+        .trim();
+
+    // 너무 짧으면 원본 제목 일부 사용
+    if (query.length < 5) {
+        query = title.substring(0, 50);
+    }
+
+    return query;
+}
+
+function getFilteredEvents(searchQuery = '', applyGrouping = true) {
     let filtered = [...allEvents];
     const now = new Date();
 
@@ -474,7 +626,7 @@ function getFilteredEvents(searchQuery = '') {
         );
     }
 
-    // Apply time remaining filter
+    // Apply time remaining filter (UTC 기준 비교 - 결과는 동일)
     if (filters.timeRemaining !== 'all') {
         const days = parseInt(filters.timeRemaining);
         const maxDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -503,92 +655,198 @@ function getFilteredEvents(searchQuery = '') {
         );
     }
 
+    // slug 기준 그룹화 적용
+    if (applyGrouping) {
+        filtered = groupEventsBySlug(filtered);
+    }
+
     return filtered;
 }
 
-function renderCalendar(searchQuery = '') {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-    document.getElementById('currentMonth').textContent = `${monthNames[month]} ${year}`;
-
-    const firstDay = new Date(year, month, 1);
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
-
+// Week View 렌더링 (현재 주 7일간 상세 타임라인)
+function renderWeekView(searchQuery = '') {
+    const todayKST = getKSTToday();
     const filtered = getFilteredEvents(searchQuery);
 
-    // Group events by date
+    // 이번 주 날짜 계산 (오늘 포함 7일)
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+        weekDates.push(addDays(todayKST, i));
+    }
+
+    // 이벤트를 날짜별로 그룹화
     const eventsByDate = {};
     filtered.forEach(event => {
         if (event.end_date) {
-            const dateKey = event.end_date.split('T')[0];
-            if (!eventsByDate[dateKey]) {
-                eventsByDate[dateKey] = [];
+            const dateKey = toKSTDateString(event.end_date);
+            if (weekDates.includes(dateKey)) {
+                if (!eventsByDate[dateKey]) {
+                    eventsByDate[dateKey] = [];
+                }
+                eventsByDate[dateKey].push(event);
             }
-            eventsByDate[dateKey].push(event);
         }
     });
 
-    const calendarDays = document.getElementById('calendarDays');
-    calendarDays.innerHTML = '';
+    // 각 날짜의 이벤트를 시간순으로 정렬
+    Object.keys(eventsByDate).forEach(dateKey => {
+        eventsByDate[dateKey].sort((a, b) => {
+            return new Date(a.end_date).getTime() - new Date(b.end_date).getTime();
+        });
+    });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Week range 업데이트
+    const weekStart = new Date(todayKST + 'T00:00:00');
+    const weekEnd = new Date(addDays(todayKST, 6) + 'T00:00:00');
+    const weekRangeText = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })}`;
+    document.getElementById('weekRange').textContent = weekRangeText;
 
-    for (let i = 0; i < 42; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
+    // Week timeline 렌더링
+    const timeline = document.getElementById('weekTimeline');
+    timeline.innerHTML = '';
 
-        const dateKey = date.toISOString().split('T')[0];
+    weekDates.forEach(dateKey => {
         const dayEvents = eventsByDate[dateKey] || [];
-        const isOtherMonth = date.getMonth() !== month;
-        const isToday = date.getTime() === today.getTime();
-        const isPast = date.getTime() < today.getTime();
+        const date = new Date(dateKey + 'T00:00:00');
+        const isToday = dateKey === todayKST;
 
         const dayEl = document.createElement('div');
-        let className = 'calendar-day';
-        if (isOtherMonth) className += ' other-month';
-        if (isToday) className += ' today';
-        if (isPast) className += ' past-day';
-        dayEl.className = className;
+        dayEl.className = `week-day${isToday ? ' today' : ''}`;
 
-        const headerHtml = `
-            <div class="day-header">
-                <span class="day-number">${date.getDate()}</span>
-                ${dayEvents.length > 0 ? `<span class="event-count">${dayEvents.length}</span>` : ''}
+        // 날짜 헤더
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Seoul' });
+        const dayNumber = date.getDate();
+        const monthName = date.toLocaleDateString('en-US', { month: 'short', timeZone: 'Asia/Seoul' });
+
+        dayEl.innerHTML = `
+            <div class="week-day-header">
+                <div class="week-day-name">${dayName}</div>
+                <div class="week-day-date">${monthName} ${dayNumber}</div>
+                ${dayEvents.length > 0 ? `<div class="week-event-count">${dayEvents.length}</div>` : ''}
             </div>
+            <div class="week-day-events" id="week-${dateKey}"></div>
         `;
 
-        const maxVisible = 3;
-        const visibleEvents = dayEvents.slice(0, maxVisible);
-        const remainingCount = dayEvents.length - maxVisible;
+        timeline.appendChild(dayEl);
 
-        let eventsHtml = '<div class="day-events">';
-        visibleEvents.forEach(event => {
-            const emoji = categoryEmojis[event.category] || categoryEmojis.default;
-            const prob = getMainProb(event);
-            const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+        // 이벤트 렌더링
+        const eventsContainer = document.getElementById(`week-${dateKey}`);
+        if (dayEvents.length === 0) {
+            eventsContainer.innerHTML = '<div class="week-no-events">No events</div>';
+        } else {
+            dayEvents.forEach(event => {
+                const time = getKSTTime(event.end_date);
+                const timeClass = getTimeClass(time);
+                const emoji = categoryEmojis[event.category] || categoryEmojis.default;
+                const prob = getMainProb(event);
+                const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+                const volume = formatCurrency(event._totalVolume || event.volume);
+                const marketCount = event._marketCount || 1;
+                const marketCountBadge = marketCount > 1 ? `<span class="market-count-badge">${marketCount}</span>` : '';
+                const searchQuery = event._searchQuery ? escapeHtml(event._searchQuery) : '';
+                const slugSafe = escapeHtml(event.slug || '');
 
-            eventsHtml += `
-                <div class="event-item" onclick="openEventLink('${event.slug}')" title="${event.title}">
-                    <span class="event-emoji">${emoji}</span>
-                    <span class="event-title">${truncate(event.title, 15)}</span>
-                    <span class="event-prob ${probClass}">${prob}%</span>
-                </div>
-            `;
-        });
-
-        if (remainingCount > 0) {
-            eventsHtml += `<div class="more-events" onclick="showDayEvents('${dateKey}')">+${remainingCount} more</div>`;
+                const eventEl = document.createElement('div');
+                eventEl.className = 'week-event';
+                eventEl.onclick = () => openEventLink(slugSafe, searchQuery);
+                eventEl.innerHTML = `
+                    <div class="week-event-time ${timeClass}">${time}</div>
+                    <div class="week-event-content">
+                        <div class="week-event-header">
+                            <span class="week-event-emoji">${emoji}</span>
+                            <span class="week-event-title">${event.title}${marketCountBadge}</span>
+                        </div>
+                        <div class="week-event-meta">
+                            <span class="week-event-prob ${probClass}">${prob}%</span>
+                            <span class="week-event-volume">Vol: $${volume}</span>
+                        </div>
+                    </div>
+                `;
+                eventsContainer.appendChild(eventEl);
+            });
         }
-        eventsHtml += '</div>';
+    });
+}
 
-        dayEl.innerHTML = headerHtml + eventsHtml;
-        calendarDays.appendChild(dayEl);
+// Calendar Overview 렌더링 (3주간 개요)
+function renderCalendarOverview(searchQuery = '') {
+    const todayKST = getKSTToday();
+    const filtered = getFilteredEvents(searchQuery);
+
+    // 시작 날짜 계산 (calendarOverviewStartWeek에 따라)
+    const startDate = addDays(todayKST, calendarOverviewStartWeek * 7);
+
+    // 3주간 날짜 계산
+    const weekDates = [];
+    for (let i = 0; i < 21; i++) {
+        weekDates.push(addDays(startDate, i));
     }
+
+    // 이벤트를 날짜별로 그룹화
+    const eventsByDate = {};
+    filtered.forEach(event => {
+        if (event.end_date) {
+            const dateKey = toKSTDateString(event.end_date);
+            if (weekDates.includes(dateKey)) {
+                if (!eventsByDate[dateKey]) {
+                    eventsByDate[dateKey] = [];
+                }
+                eventsByDate[dateKey].push(event);
+            }
+        }
+    });
+
+    // Calendar range 업데이트
+    const rangeStart = new Date(startDate + 'T00:00:00');
+    const rangeEnd = new Date(addDays(startDate, 20) + 'T00:00:00');
+    const rangeText = `${rangeStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })} - ${rangeEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })}`;
+    document.getElementById('calendarRange').textContent = rangeText;
+
+    // Calendar days 렌더링
+    const daysContainer = document.getElementById('calendarOverviewDays');
+    daysContainer.innerHTML = '';
+
+    weekDates.forEach(dateKey => {
+        const dayEvents = eventsByDate[dateKey] || [];
+        const date = new Date(dateKey + 'T00:00:00');
+        const isToday = dateKey === todayKST;
+
+        const dayEl = document.createElement('div');
+        dayEl.className = `calendar-overview-day${isToday ? ' today' : ''}`;
+
+        const dayNumber = date.getDate();
+        const eventCount = dayEvents.length;
+
+        // 이벤트 수에 따라 dot 개수 결정 (최대 3개)
+        const dotCount = Math.min(eventCount, 3);
+        let dotsHtml = '';
+        if (eventCount > 0) {
+            dotsHtml = '<div class="calendar-overview-dots">';
+            for (let i = 0; i < dotCount; i++) {
+                dotsHtml += '<div class="calendar-overview-dot"></div>';
+            }
+            dotsHtml += '</div>';
+        }
+
+        dayEl.innerHTML = `
+            <div class="calendar-overview-day-number">${dayNumber}</div>
+            ${dotsHtml}
+            ${eventCount > 3 ? `<div class="calendar-overview-more">+${eventCount - 3}</div>` : ''}
+        `;
+
+        // 클릭 시 해당 날짜의 이벤트 표시
+        if (eventCount > 0) {
+            dayEl.style.cursor = 'pointer';
+            dayEl.onclick = () => showDayEvents(dateKey);
+        }
+
+        daysContainer.appendChild(dayEl);
+    });
+}
+
+function renderCalendar(searchQuery = '') {
+    renderWeekView(searchQuery);
+    renderCalendarOverview(searchQuery);
 }
 
 function getMainProb(event) {
@@ -602,25 +860,42 @@ function truncate(str, length) {
     return str.length > length ? str.substring(0, length) + '...' : str;
 }
 
-function openEventLink(slug) {
-    if (slug) {
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function openEventLink(slug, searchQuery) {
+    if (searchQuery) {
+        // 그룹화된 이벤트는 검색 페이지로 이동
+        const encoded = encodeURIComponent(searchQuery);
+        window.open(`https://polymarket.com/markets?_q=${encoded}`, '_blank');
+    } else if (slug) {
+        // 단일 마켓은 직접 링크
         window.open(`https://polymarket.com/event/${slug}`, '_blank');
     }
 }
 
 function showDayEvents(dateKey) {
     const filtered = getFilteredEvents(document.getElementById('searchInput').value);
-    const dayEvents = filtered.filter(e => e.end_date?.startsWith(dateKey));
+    // KST 기준으로 해당 날짜의 이벤트 필터링
+    const dayEvents = filtered.filter(e => toKSTDateString(e.end_date) === dateKey);
 
     const date = new Date(dateKey + 'T00:00:00');
-    const dateStr = date.toLocaleDateString('en-US', {
+    const dateStr = date.toLocaleDateString('ko-KR', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'Asia/Seoul'
     });
 
-    document.getElementById('modalDate').textContent = `Events on ${dateStr}`;
+    document.getElementById('modalDate').textContent = `${dateStr} 만료 예정`;
 
     const modalBody = document.getElementById('modalBody');
     modalBody.innerHTML = '';
@@ -629,15 +904,16 @@ function showDayEvents(dateKey) {
         const emoji = categoryEmojis[event.category] || categoryEmojis.default;
         const prob = getMainProb(event);
         const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+        const marketCount = event._marketCount || 1;
 
         const eventEl = document.createElement('div');
         eventEl.className = 'modal-event-item';
-        eventEl.onclick = () => openEventLink(event.slug);
+        eventEl.onclick = () => openEventLink(event.slug, event._searchQuery);
         eventEl.innerHTML = `
             <span class="modal-event-emoji">${emoji}</span>
             <div class="modal-event-content">
                 <div class="modal-event-title">${event.title}</div>
-                <div class="modal-event-category">${event.category || 'Uncategorized'}</div>
+                <div class="modal-event-category">${event.category || 'Uncategorized'}${marketCount > 1 ? ` · ${marketCount} markets` : ''}</div>
             </div>
             <span class="modal-event-prob ${probClass}">${prob}%</span>
         `;
