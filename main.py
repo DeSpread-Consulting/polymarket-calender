@@ -8,6 +8,7 @@ Polymarket ETL Pipeline
 import os
 import json
 import requests
+from typing import Optional
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -88,6 +89,62 @@ def safe_float(value) -> float:
     return 0.0
 
 
+def infer_category_from_title(title: str, category: Optional[str]) -> str:
+    """제목 기반으로 카테고리 추론"""
+    if category:
+        return category
+
+    if not title:
+        return 'Uncategorized'
+
+    title_lower = title.lower()
+
+    # Sports 키워드
+    sports_keywords = ['nba', 'nfl', 'nhl', 'mlb', 'soccer', 'basketball', 'football', 'baseball',
+                      'hockey', 'ncaa', 'fifa', 'champion', 'playoff', 'finals', 'game',
+                      'vs', 'vs.', 'team', 'player', 'score', 'win', 'match', 'tennis',
+                      'cricket', 'golf', 'racing', 'boxing', 'ufc', 'mma', 'esports']
+
+    # Crypto 키워드
+    crypto_keywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi',
+                      'nft', 'solana', 'xrp', 'ripple', 'cardano', 'ada', 'doge', 'coin',
+                      'token', 'wallet', 'mining', 'exchange', 'binance', 'coinbase']
+
+    # Politics 키워드
+    politics_keywords = ['trump', 'biden', 'president', 'election', 'congress', 'senate',
+                        'democrat', 'republican', 'vote', 'poll', 'campaign', 'governor',
+                        'mayor', 'minister', 'parliament', 'government', 'political']
+
+    # Finance 키워드
+    finance_keywords = ['stock', 'market', 'economy', 'gdp', 'inflation', 'fed', 'federal reserve',
+                       'dow', 'nasdaq', 's&p', 'trading', 'price', 'dollar', 'euro', 'bank']
+
+    # Pop Culture 키워드
+    culture_keywords = ['movie', 'film', 'album', 'song', 'artist', 'celebrity', 'award',
+                       'oscar', 'grammy', 'emmy', 'netflix', 'spotify', 'box office']
+
+    # Science/Tech 키워드
+    science_keywords = ['ai', 'artificial intelligence', 'robot', 'space', 'nasa', 'spacex',
+                       'climate', 'vaccine', 'drug', 'technology', 'apple', 'google',
+                       'microsoft', 'tesla', 'research', 'scientific']
+
+    # 키워드 매칭
+    if any(keyword in title_lower for keyword in sports_keywords):
+        return 'Sports'
+    if any(keyword in title_lower for keyword in crypto_keywords):
+        return 'Crypto'
+    if any(keyword in title_lower for keyword in politics_keywords):
+        return 'Politics'
+    if any(keyword in title_lower for keyword in finance_keywords):
+        return 'Finance'
+    if any(keyword in title_lower for keyword in culture_keywords):
+        return 'Pop Culture'
+    if any(keyword in title_lower for keyword in science_keywords):
+        return 'Science'
+
+    return 'Uncategorized'
+
+
 def transform_data(raw_data: list[dict]) -> list[dict]:
     """API 응답 데이터를 DB 스키마에 맞게 변환 (필터 없이 전체)"""
     transformed = []
@@ -106,6 +163,12 @@ def transform_data(raw_data: list[dict]) -> list[dict]:
         elif isinstance(tags, str):
             tags = safe_json_parse(tags) or []
 
+        # 카테고리 추론
+        inferred_cat = infer_category_from_title(
+            item.get("question", ""),
+            item.get("category")
+        )
+
         record = {
             "id": item.get("conditionId"),
             "title": item.get("question"),
@@ -119,6 +182,7 @@ def transform_data(raw_data: list[dict]) -> list[dict]:
             "category": item.get("category"),
             "tags": tags,
             "image_url": item.get("image"),
+            "inferred_category": inferred_cat,
         }
 
         # id가 없는 레코드는 건너뛰기

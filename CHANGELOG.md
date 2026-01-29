@@ -2,7 +2,119 @@
 
 ## 2026-01-29
 
-### 1. 링크 없는 이벤트 처리 개선
+### Python 3.9 호환성 수정
+- `main.py`: `str | None` → `Optional[str]` 타입 힌트 변경 (Python 3.10+ 구문 → 3.9 호환)
+
+---
+
+## 2026-01-29 (Earlier)
+
+### 1. 카테고리 필터 추가 (제목 기반 추론 + Supabase 저장)
+
+#### 파일: `web/app.js`
+**줄 번호**: 82, 331-355, 357-370, 409, 441-459, 707
+
+**변경 내용**:
+- 필터에 카테고리 제외 기능 추가
+- Sports, Crypto 등 특정 카테고리 숨김 가능
+- **Tags 기반 카테고리 자동 추론**: API에 category가 없어도 tags로 분류
+
+**추가된 코드**:
+```javascript
+// 필터 상태에 excludedCategories 추가
+let filters = {
+    tags: [],
+    excludedCategories: [], // 제외할 카테고리
+    timeRemaining: 'all',
+    minVolume: 10000,
+    minLiquidity: 0
+};
+
+// 카테고리 추론 함수 (tags 기반)
+const CATEGORY_RULES = {
+    'Sports': ['Sports', 'NBA', 'NFL', 'Soccer', ...],
+    'Crypto': ['Crypto', 'Bitcoin', 'Ethereum', ...],
+    'Politics': ['Politics', 'Elections', 'Trump', ...],
+    ...
+};
+
+function inferCategory(event) {
+    if (event.category) return event.category;
+
+    // tags에서 카테고리 추론
+    if (event.tags && Array.isArray(event.tags)) {
+        for (const [category, keywords] of Object.entries(CATEGORY_RULES)) {
+            const hasMatch = event.tags.some(tag =>
+                keywords.some(keyword => tag.toLowerCase().includes(keyword.toLowerCase()))
+            );
+            if (hasMatch) return category;
+        }
+    }
+
+    return 'Uncategorized';
+}
+
+// 카테고리 필터링
+if (filters.excludedCategories.length > 0) {
+    filtered = filtered.filter(e =>
+        !filters.excludedCategories.includes(inferCategory(e))
+    );
+}
+```
+
+**효과**:
+- Tags 기반 자동 분류: 'NBA' 태그 → Sports 카테고리
+- Sports, Crypto 등 민감한 카테고리 필터에서 제외 가능
+
+---
+
+#### 파일: `web/index.html`
+**줄 번호**: 202-213
+
+**추가된 HTML**:
+```html
+<!-- Categories Section -->
+<div class="filter-section">
+    <div class="filter-section-header">
+        <svg>...</svg>
+        Hide Categories:
+    </div>
+    <div class="filter-categories" id="filterCategories">
+        <!-- Categories will be populated dynamically -->
+    </div>
+</div>
+```
+
+---
+
+#### 파일: `web/style.css`
+**줄 번호**: 1113-1119, 1137-1142
+
+**추가된 CSS**:
+```css
+.tag-chip.excluded {
+    background: var(--accent-red);
+    border-color: var(--accent-red);
+    color: white;
+    opacity: 0.9;
+}
+
+.filter-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+```
+
+**효과**:
+- 제외된 카테고리는 빨간색으로 표시
+- 클릭으로 제외/포함 토글
+
+---
+
+### 2. 링크 없는 이벤트 처리 개선
 
 #### 파일: `web/app.js`
 **줄 번호**: 929-947

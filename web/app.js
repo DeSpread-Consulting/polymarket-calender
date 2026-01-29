@@ -80,6 +80,7 @@ let calendarOverviewStartWeek = 0; // 0 = Week View 직후부터, 1 = 1주 더 �
 // Filter state (기본값: 거래량 $10K 이상만 표시)
 let filters = {
     tags: [],
+    excludedCategories: [], // 제외할 카테고리 리스트
     timeRemaining: 'all',
     minVolume: 10000,
     minLiquidity: 0
@@ -90,6 +91,9 @@ let tempFilters = { ...filters };
 
 // All available tags with counts
 let allTags = {};
+
+// All available categories with counts
+let allCategories = {};
 
 // Category to Emoji mapping
 const categoryEmojis = {
@@ -257,6 +261,7 @@ async function loadData() {
         console.log('⚠️ Supabase 없음 - 데모 데이터 사용');
         allEvents = generateDemoData();
         extractTags();
+        extractCategories();
         updateStats();
         return;
     }
@@ -289,6 +294,7 @@ async function loadData() {
         console.log('✅ 데이터 로드 성공:', allData.length, '건');
         allEvents = allData;
         extractTags();
+        extractCategories();
         updateStats();
     } catch (error) {
         console.error('❌ 데이터 로드 실패:', error);
@@ -320,6 +326,41 @@ function extractTags() {
 
     allTags = sortedTags;
     document.getElementById('tagCount').textContent = `(${Object.keys(allTags).length})`;
+}
+
+// 카테고리 매핑 규칙 (전역 상수)
+const CATEGORY_RULES = {
+    'Sports': ['Sports', 'NBA', 'NFL', 'NHL', 'Soccer', 'Basketball', 'Football', 'Baseball', 'Hockey', 'NCAA', 'Games', 'Esports', 'Cricket', 'Tennis'],
+    'Crypto': ['Crypto', 'Bitcoin', 'Ethereum', 'BTC', 'ETH', 'Blockchain', 'DeFi', 'NFT', 'Solana', 'XRP', 'Ripple'],
+    'Politics': ['Politics', 'Elections', 'Trump', 'Biden', 'Congress', 'Senate', 'President', 'Primaries', 'Republican', 'Democrat', 'Geopolitics'],
+    'Pop Culture': ['Pop Culture', 'Culture', 'Entertainment', 'Movies', 'Music', 'Celebrity', 'Awards', 'Oscars', 'Grammys'],
+    'Finance': ['Finance', 'Stocks', 'Economy', 'Market', 'Trading', 'Investment', 'GDP', 'Inflation'],
+    'Science': ['Science', 'Technology', 'Tech', 'AI', 'Space', 'Climate', 'Research']
+};
+
+// 이벤트의 카테고리를 반환하는 함수
+function inferCategory(event) {
+    // Supabase에 저장된 추론된 카테고리 사용
+    return event.inferred_category || event.category || 'Uncategorized';
+}
+
+function extractCategories() {
+    allCategories = {};
+
+    allEvents.forEach(event => {
+        const category = inferCategory(event);
+        allCategories[category] = (allCategories[category] || 0) + 1;
+    });
+
+    // Sort by count
+    const sortedCategories = Object.entries(allCategories)
+        .sort((a, b) => b[1] - a[1])
+        .reduce((obj, [key, value]) => {
+            obj[key] = value;
+            return obj;
+        }, {});
+
+    allCategories = sortedCategories;
 }
 
 function generateDemoData() {
@@ -382,6 +423,7 @@ function formatCurrency(num) {
 function openFilterModal() {
     tempFilters = JSON.parse(JSON.stringify(filters));
     renderFilterTags();
+    renderFilterCategories();
     syncFilterUI();
     document.getElementById('filterModalOverlay').classList.add('active');
 }
@@ -409,6 +451,27 @@ function renderFilterTags(searchQuery = '') {
             } else {
                 tempFilters.tags.push(tag);
                 chip.classList.add('active');
+            }
+        });
+        container.appendChild(chip);
+    });
+}
+
+function renderFilterCategories() {
+    const container = document.getElementById('filterCategories');
+    container.innerHTML = '';
+
+    Object.entries(allCategories).forEach(([category, count]) => {
+        const chip = document.createElement('button');
+        chip.className = `tag-chip${tempFilters.excludedCategories.includes(category) ? ' excluded' : ''}`;
+        chip.innerHTML = `${category} <span class="tag-count">${count}</span>`;
+        chip.addEventListener('click', () => {
+            if (tempFilters.excludedCategories.includes(category)) {
+                tempFilters.excludedCategories = tempFilters.excludedCategories.filter(c => c !== category);
+                chip.classList.remove('excluded');
+            } else {
+                tempFilters.excludedCategories.push(category);
+                chip.classList.add('excluded');
             }
         });
         container.appendChild(chip);
@@ -623,6 +686,13 @@ function getFilteredEvents(searchQuery = '', applyGrouping = true) {
     if (filters.tags.length > 0) {
         filtered = filtered.filter(e =>
             e.tags && filters.tags.some(tag => e.tags.includes(tag))
+        );
+    }
+
+    // Apply category exclusion filter
+    if (filters.excludedCategories.length > 0) {
+        filtered = filtered.filter(e =>
+            !filters.excludedCategories.includes(inferCategory(e))
         );
     }
 

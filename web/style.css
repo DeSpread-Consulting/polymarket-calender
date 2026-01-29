@@ -1111,6 +1111,14 @@ body {
     overflow: hidden;
 }
 
+.filter-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
 .tag-chip {
     display: inline-flex;
     align-items: center;
@@ -1134,6 +1142,13 @@ body {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
     color: white;
+}
+
+.tag-chip.excluded {
+    background: var(--accent-red);
+    border-color: var(--accent-red);
+    color: white;
+    opacity: 0.9;
 }
 
 .tag-chip .tag-count {
