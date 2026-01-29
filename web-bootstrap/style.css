@@ -1,0 +1,281 @@
+/* Reset & Base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Dark Theme (Default) */
+:root,
+[data-theme="dark"] {
+    --bs-body-bg: #0d1117;
+    --bs-body-color: #f0f6fc;
+    --bs-border-color: #30363d;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-yellow: #d29922;
+    --accent-purple: #a371f7;
+    --accent-cyan: #39c5cf;
+    --accent-red: #f85149;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+    --bs-body-bg: #ffffff;
+    --bs-body-color: #1f2328;
+    --bs-border-color: #d0d7de;
+    --bg-secondary: #f6f8fa;
+    --bg-tertiary: #eaeef2;
+    --text-secondary: #656d76;
+    --text-muted: #8c959f;
+    --accent-blue: #0969da;
+    --accent-green: #1a7f37;
+    --accent-yellow: #9a6700;
+    --accent-purple: #8250df;
+    --accent-cyan: #0598bc;
+    --accent-red: #cf222e;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+}
+
+.card {
+    background-color: var(--bg-secondary);
+    border-color: var(--bs-border-color);
+}
+
+.modal-content {
+    background-color: var(--bg-secondary);
+    border-color: var(--bs-border-color);
+}
+
+.form-control {
+    background-color: var(--bg-secondary);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+
+.form-control:focus {
+    background-color: var(--bg-secondary);
+    border-color: var(--accent-blue);
+    color: var(--bs-body-color);
+}
+
+.input-group-text {
+    background-color: var(--bg-tertiary);
+    border-color: var(--bs-border-color);
+}
+
+.stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.stat-icon.blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent-blue);
+}
+
+.stat-icon.yellow {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--accent-yellow);
+}
+
+.stat-icon.purple {
+    background: rgba(163, 113, 247, 0.15);
+    color: var(--accent-purple);
+}
+
+.stat-icon.cyan {
+    background: rgba(57, 197, 207, 0.15);
+    color: var(--accent-cyan);
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-blue);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.filter-tag .remove-tag {
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.week-day {
+    min-width: 0;
+    border-right: 1px solid var(--bs-border-color);
+    transition: background-color 0.3s;
+    display: flex;
+    flex-direction: column;
+}
+
+.week-day:last-child {
+    border-right: none;
+}
+
+.week-day.today {
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.week-day-header {
+    text-align: center;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.week-day-name {
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.week-day-date {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.week-day-events {
+    padding: 12px;
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+.week-event {
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.week-event:hover {
+    background: var(--bs-body-bg);
+    transform: translateX(2px);
+    border-left-color: var(--accent-blue);
+}
+
+.week-event-time {
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+}
+
+.week-event-time.dawn { color: var(--accent-red); }
+.week-event-time.day { color: var(--accent-yellow); }
+.week-event-time.night { color: var(--accent-cyan); }
+
+
+.market-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-purple);
+    color: white;
+    font-size: 9px;
+    font-weight: 600;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.calendar-overview-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-bottom: 1px solid var(--bs-border-color);
+    background: var(--bg-tertiary);
+}
+
+.calendar-overview-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+}
+
+.calendar-overview-day {
+    min-height: 120px;
+    border-right: 1px solid var(--bs-border-color);
+    border-bottom: 1px solid var(--bs-border-color);
+    padding: 8px;
+    position: relative;
+    transition: background-color 0.2s;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.calendar-overview-day:nth-child(7n) {
+    border-right: none;
+}
+
+.calendar-overview-day.other-month {
+    background-color: var(--bg-tertiary);
+}
+
+.calendar-overview-day.today {
+    background-color: rgba(88, 166, 255, 0.08);
+}
+
+.overview-event-title {
+    font-size: 10px;
+}
+
+.filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tag-chip {
+    cursor: pointer;
+}
+
+.btn-group > .btn-outline-primary.active {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+
+
+/* Theme Toggle Icons */
+[data-theme="dark"] .sun-icon {
+    display: block;
+}
+
+[data-theme="dark"] .moon-icon {
+    display: none;
+}
+
+[data-theme="light"] .sun-icon {
+    display: none;
+}
+
+[data-theme="light"] .moon-icon {
+    display: block;
+}

@@ -804,6 +804,7 @@ body {
     transition: background-color 0.2s;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 
@@ -843,6 +844,7 @@ body {
     font-size: 11px;
     cursor: pointer;
     transition: background 0.2s;
+    min-width: 0;
 }
 
 .calendar-overview-event:hover {

@@ -1,0 +1,9 @@
+// Supabase Configuration Example
+// 이 파일을 config.js로 복사하고 값을 채우세요
+// Supabase 대시보드 > Settings > API 에서 확인 가능
+
+const CONFIG = {
+    SUPABASE_URL: 'https://your-project.supabase.co',
+    // anon key (public) - 클라이언트에서 안전하게 사용 가능
+    SUPABASE_ANON_KEY: 'your-anon-key-here'
+};
