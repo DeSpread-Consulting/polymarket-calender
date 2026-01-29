@@ -685,10 +685,11 @@ function getFilteredEvents(searchQuery = '', applyGrouping = true) {
         );
     }
 
-    // 기본적으로 과거 이벤트 제외 (항상 적용)
+    // 기본적으로 과거 이벤트 및 정산 완료 시장 제외 (항상 적용)
     filtered = filtered.filter(e => {
         const endDate = new Date(e.end_date);
-        return endDate >= now;
+        const isClosed = e.closed === true;
+        return endDate >= now && !isClosed;  // 마감 전 + 미정산만
     });
 
     // Apply time remaining filter (추가 범위 제한)

@@ -148,20 +148,6 @@ def transform_data(raw_data: list[dict]) -> list[dict]:
     """API 응답 데이터를 DB 스키마에 맞게 변환 (필터 없이 전체)"""
     transformed = []
 
-    # 디버그: 첫 번째 아이템의 모든 필드 출력
-    if raw_data and len(transformed) == 0:
-        first_item = raw_data[0]
-        print(f"\n[DEBUG] API 응답 필드 목록:")
-        print(f"  전체 필드: {sorted(first_item.keys())}")
-
-        # 'closed', 'resolved', 'settled' 같은 필드 확인
-        status_fields = [k for k in first_item.keys() if any(word in k.lower() for word in ['close', 'resolve', 'settle', 'active', 'enable'])]
-        if status_fields:
-            print(f"  상태 관련 필드: {status_fields}")
-            for field in status_fields:
-                print(f"    {field}: {first_item.get(field)}")
-        print()
-
     for item in raw_data:
         # outcomePrices 처리
         outcome_prices = safe_json_parse(item.get("outcomePrices"))
@@ -195,6 +181,7 @@ def transform_data(raw_data: list[dict]) -> list[dict]:
             "category": inferred_cat,
             "tags": tags,
             "image_url": item.get("image"),
+            "closed": item.get("closed", False),  # 정산 여부
         }
 
         # id가 없는 레코드는 건너뛰기
