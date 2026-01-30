@@ -41,8 +41,8 @@ def fetch_polymarket_data() -> list[dict]:
     while True:
         params = {
             "limit": BATCH_SIZE,
-            "offset": offset
-            # active, closed 파라미터 제거 → 전체 이벤트 수집
+            "offset": offset,
+            "closed": "false"  # 정산 완료된 시장 제외 (평소 운영)
         }
 
         response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
