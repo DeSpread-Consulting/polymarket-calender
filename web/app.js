@@ -1525,10 +1525,8 @@ function translatePage() {
         langToggle.querySelector('.lang-text').textContent = currentLang.toUpperCase();
     }
 
-    // Update quick filter chips
-    if (typeof initQuickFilters === 'function') {
-        initQuickFilters();
-    }
+    // Note: Quick filter chips are intentionally kept in English only
+    // They are not translated to maintain consistency across languages
 
     // Re-render calendar to update translated categories
     if (typeof renderCalendar === 'function') {
