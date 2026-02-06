@@ -119,7 +119,10 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         # 2차 추가
         'traded to', 'sign with', 'manager of', 'rookie card', 'advance to', 'qualify to',
         'manchester united', 'real madrid', 'juventus', 'antetokounmpo', 'jokic', 'cs2',
-        'masters santiago', 'valorant', 'red bull', 'scream 7'
+        'masters santiago', 'valorant', 'red bull', 'scream 7',
+        # 3차 추가 (F1, e스포츠, 기타 스포츠)
+        'f1', 'grand prix', 'pole position', 'fastest lap', 'verstappen', 'hamilton',
+        'leclerc', 'norris', 'mclaren', 'mercedes', 'ferrari', 'ucl', 'esl', 'lcs'
     ]
 
     # Crypto 키워드 (주요 암호화폐 추가)
@@ -135,7 +138,9 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         'web3', 'dao', 'consensys',
         # 2차 추가
         'uni', 'uniswap', 'fabric', 'vitalik buterin', 'sbf', 'arthur hayes',
-        'ansem', 'anatoly yakovenko', 'saylor'
+        'ansem', 'anatoly yakovenko', 'saylor',
+        # 3차 추가 (암호화폐/블록체인 관련 용어)
+        'cex', 'insolvent', 'rwa', 'satoshi'
     ]
 
     # Politics 키워드 (국제 정치, 법률 추가)
@@ -155,7 +160,9 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         # 2차 추가
         'zelenskyy', 'putin', 'bernie endorse', 'arrested', 'exiled', 'maduro',
         'nato', 'abraham accords', 'saudi arabia', 'oman', 'rsf', 'khartoum',
-        'ilhan omar', 'convicted', 'charged with', 'epstein', 'aguiar'
+        'ilhan omar', 'convicted', 'charged with', 'epstein', 'aguiar',
+        # 3차 추가 (국제정치, 정치인 관련 용어)
+        'hamas', 'damascus', 'deport', 'brics', 'starmer', 'trudeau', 'gaza'
     ]
 
     # Finance 키워드 (주식, 원자재, 경제지표 추가)
@@ -173,7 +180,9 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         # 2차 추가
         'ceo of', 'mortgage rate', 'recession', 'net worth', 'richest person',
         'doordash', 'lululemon', 'glencore', 'rio tinto', 'merger', 'bezos',
-        'ellison', 'jensen huang', 'larry page', 'elon musk\'s net worth'
+        'ellison', 'jensen huang', 'larry page', 'elon musk\'s net worth',
+        # 3차 추가 (외환, 경제 지표 관련 용어)
+        'eur/usd', 'fomc', 'mortgage', 'forex'
     ]
 
     # Pop Culture 키워드 (소셜미디어, 엔터테인먼트 추가)
@@ -191,7 +200,9 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         'billboard', 'debut no.1', 'podcast', 'divorce', 'bill clinton',
         'creative director', 'versace', 'opening weekend', 'domestically',
         'marty supreme', 'greenland', 'anaconda', 'bully', 'drake maye',
-        'boy names', 'girl names', 'ssa', 'baby names'
+        'boy names', 'girl names', 'ssa', 'baby names',
+        # 3차 추가 (유명인, 게임, 소셜미디어 관련 용어)
+        'pregnant', 'perform at', 'world tour', 'bts', 'half-life 3', 'kylie jenner', 'beyoncé'
     ]
 
     # Science/Tech 키워드 (날씨, 자연재해, AI 추가)
@@ -210,7 +221,9 @@ def infer_category_from_title(title: str, category: Optional[str], tags: list = 
         'highest temperature', 'lowest temperature', 'ankara', 'seattle',
         # 2차 추가
         'volcanic eruptions', 'vei', 'cloudflare incident', 'waymo', 'autonomous',
-        'self-driving', 'valve', 'cache', 'map pool'
+        'self-driving', 'valve', 'cache', 'map pool',
+        # 3차 추가 (기후, 자연재해, 기술 서비스 관련 용어)
+        'hurricane', 'typhoon', 'hottest on record', 'aws', 'disrupted'
     ]
 
     # 키워드 매칭 (순서 중요: 더 구체적인 것부터 체크)
