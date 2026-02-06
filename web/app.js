@@ -857,49 +857,6 @@ function updateActiveFiltersDisplay() {
     });
 }
 
-// 제목에서 숫자/금액을 제거하여 이벤트 그룹 식별자 추출
-function extractEventGroupKey(title) {
-    if (!title) return '';
-
-    // 숫자 패턴들을 정규화하여 같은 토픽의 마켓들을 그룹화
-    let normalized = title
-        // "at least 25", "at least 27" -> "at least X"
-        .replace(/at least \d+(\.\d+)?/gi, 'at least X')
-        // "over 100", "under 50" -> "over X", "under X"
-        .replace(/(over|under|above|below|more than|less than)\s*\d+(\.\d+)?/gi, '$1 X')
-        // "$1,000", "$10K", "$1M" -> "$X"
-        .replace(/\$[\d,]+(\.\d+)?[KMB]?/gi, '$X')
-        // "25%", "30%" -> "X%"
-        .replace(/\d+(\.\d+)?%/g, 'X%')
-        // 날짜 패턴 "1/27", "01/27/2026"
-        .replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, 'DATE')
-        // 순수 숫자 (남은 것들) "round 1", "week 5"
-        .replace(/\b\d+(\.\d+)?\b/g, 'X')
-        .trim()
-        .toLowerCase();
-
-    return normalized;
-}
-
-// 검색 쿼리용 제목 추출 (핵심 키워드만)
-function extractSearchQuery(title) {
-    if (!title) return '';
-    // "Will X score at least Y" -> "X"
-    // 질문 형식에서 핵심 주제 추출
-    let query = title
-        .replace(/^(will|does|is|are|can|has|have|do)\s+/i, '')
-        .replace(/\s+(score|reach|hit|get|be|have|win|lose).*/i, '')
-        .replace(/\?.*$/, '')
-        .trim();
-
-    // 너무 짧으면 원본 제목 일부 사용
-    if (query.length < 5) {
-        query = title.substring(0, 50);
-    }
-
-    return query;
-}
-
 function getFilteredEvents(searchQuery = '') {
     let filtered = [...allEvents];
     const now = new Date();
@@ -1045,54 +1002,56 @@ function renderWeekView(searchQuery = '') {
             eventsContainer.innerHTML = `<div class="week-no-events">${translations[currentLang].noEvents}</div>`;
         } else {
             dayEvents.forEach(event => {
-                const time = getKSTTime(event.end_date);
-                const timeClass = getTimeClass(time);
-                const imageUrl = event.image_url || '';
-                const prob = getMainProb(event);
-                const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
-                const volume = formatCurrency(event.volume);
-                const slugSafe = escapeHtml(event.slug || '');
-
-                // Get category color
-                const category = inferCategory(event);
-                const categoryColor = categoryColors[category] || categoryColors['default'];
-
-                const eventEl = document.createElement('div');
-                eventEl.className = 'week-event';
-                eventEl.style.borderLeftColor = categoryColor;
-                eventEl.setAttribute('data-category', category);
-                eventEl.onclick = () => openEventLink(slugSafe, '');
-
-                // Add hover event listeners for tooltip
-                eventEl.addEventListener('mouseenter', (e) => showEventTooltip(e, event));
-                eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
-                eventEl.addEventListener('mouseleave', hideEventTooltip);
-
-                eventEl.innerHTML = `
-                    <div class="week-event-time ${timeClass}">${time}</div>
-                    <div class="week-event-content">
-                        <div class="week-event-header">
-                            <img src="${imageUrl}" class="week-event-image" alt="" onerror="this.style.display='none'">
-                            <span class="week-event-title">${event.title}</span>
-                            <button class="event-link-btn" onclick="event.stopPropagation(); window.open('https://polymarket.com/event/${slugSafe}', '_blank');" title="Open in Polymarket">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                                    <polyline points="15 3 21 3 21 9"></polyline>
-                                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="week-event-meta">
-                            <span class="week-event-prob ${probClass}">${prob}%</span>
-                            <span class="week-event-volume">Vol: $${volume}</span>
-                        </div>
-                    </div>
-                `;
-
-                eventsContainer.appendChild(eventEl);
+                renderWeekEventCard(eventsContainer, event);
             });
         }
     });
+}
+
+// Week View 개별 이벤트 카드 렌더링
+function renderWeekEventCard(container, event) {
+    const time = getKSTTime(event.end_date);
+    const timeClass = getTimeClass(time);
+    const imageUrl = event.image_url || '';
+    const prob = getMainProb(event);
+    const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+    const volume = formatCurrency(event.volume);
+    const slugSafe = escapeHtml(event.slug || '');
+    const category = inferCategory(event);
+    const categoryColor = categoryColors[category] || categoryColors['default'];
+
+    const eventEl = document.createElement('div');
+    eventEl.className = 'week-event';
+    eventEl.style.borderLeftColor = categoryColor;
+    eventEl.setAttribute('data-category', category);
+    eventEl.onclick = () => openEventLink(slugSafe, '');
+
+    eventEl.addEventListener('mouseenter', (e) => showEventTooltip(e, event));
+    eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
+    eventEl.addEventListener('mouseleave', hideEventTooltip);
+
+    eventEl.innerHTML = `
+        <div class="week-event-time ${timeClass}">${time}</div>
+        <div class="week-event-content">
+            <div class="week-event-header">
+                <img src="${imageUrl}" class="week-event-image" alt="" onerror="this.style.display='none'">
+                <span class="week-event-title">${event.title}</span>
+                <button class="event-link-btn" onclick="event.stopPropagation(); window.open('https://polymarket.com/event/${slugSafe}', '_blank');" title="Open in Polymarket">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="week-event-meta">
+                <span class="week-event-prob ${probClass}">${prob}%</span>
+                <span class="week-event-volume">Vol: $${volume}</span>
+            </div>
+        </div>
+    `;
+
+    container.appendChild(eventEl);
 }
 
 // Calendar Overview 렌더링 (3주간 개요)
@@ -1144,7 +1103,6 @@ function renderCalendarOverview(searchQuery = '') {
 
         const dayNumber = date.getDate();
         const currentMonth = date.getMonth();
-        const eventCount = dayEvents.length;
 
         // 월이 바뀌는지 확인 (1일이거나 이전 월과 다를 때)
         const isNewMonth = previousMonth !== null && previousMonth !== currentMonth;
@@ -1157,57 +1115,57 @@ function renderCalendarOverview(searchQuery = '') {
             monthLabel = `<div class="calendar-overview-month-label">${monthName}</div>`;
         }
 
-        // 거래량 기준으로 정렬하여 상위 3개 선택
-        const topEvents = [...dayEvents]
-            .sort((a, b) => (parseFloat(b._totalVolume || b.volume) || 0) - (parseFloat(a._totalVolume || a.volume) || 0))
-            .slice(0, 3);
+        // 거래량 기준 상위 3개 선택
+        const sortedEvents = [...dayEvents].sort((a, b) => (parseFloat(b.volume) || 0) - (parseFloat(a.volume) || 0));
+        const topEvents = sortedEvents.slice(0, 3);
 
         // Build day element
         dayEl.innerHTML = `
             ${monthLabel}
             <div class="calendar-overview-day-number">${dayNumber}</div>
             ${topEvents.length > 0 ? '<div class="calendar-overview-events"></div>' : ''}
-            ${eventCount > 3 ? `<div class="calendar-overview-more-link" onclick="showDayEvents('${dateKey}')">+${eventCount - 3} ${translations[currentLang].more}</div>` : ''}
+            ${dayEvents.length > 3 ? `<div class="calendar-overview-more-link" onclick="showDayEvents('${dateKey}')">+${dayEvents.length - 3} ${translations[currentLang].more}</div>` : ''}
         `;
 
         daysContainer.appendChild(dayEl);
 
-        // Add events with hover listeners
+        // 이벤트 렌더링
         if (topEvents.length > 0) {
             const eventsContainer = dayEl.querySelector('.calendar-overview-events');
             topEvents.forEach(event => {
-                const imageUrl = event.image_url || '';
-                const prob = getMainProb(event);
-                const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
-                const title = truncate(event.title, 25);
-                const searchQuery = event._searchQuery ? escapeHtml(event._searchQuery) : '';
-                const slugSafe = escapeHtml(event.slug || '');
-
-                // Get category color
-                const category = inferCategory(event);
-                const categoryColor = categoryColors[category] || categoryColors['default'];
-
-                const eventEl = document.createElement('div');
-                eventEl.className = 'calendar-overview-event';
-                eventEl.dataset.category = category;
-                eventEl.style.borderLeftColor = categoryColor;
-                eventEl.onclick = (e) => { e.stopPropagation(); openEventLink(slugSafe, searchQuery); };
-
-                // Add hover event listeners for tooltip
-                eventEl.addEventListener('mouseenter', (e) => showEventTooltip(e, event));
-                eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
-                eventEl.addEventListener('mouseleave', hideEventTooltip);
-
-                eventEl.innerHTML = `
-                    <img src="${imageUrl}" class="overview-event-image" alt="" onerror="this.style.display='none'">
-                    <span class="overview-event-title">${title}</span>
-                    <span class="overview-event-prob ${probClass}">${prob}%</span>
-                `;
-
-                eventsContainer.appendChild(eventEl);
+                renderOverviewEventItem(eventsContainer, event);
             });
         }
     });
+}
+
+// Calendar Overview 개별 이벤트 아이템
+function renderOverviewEventItem(container, event) {
+    const imageUrl = event.image_url || '';
+    const prob = getMainProb(event);
+    const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+    const title = truncate(event.title, 25);
+    const slugSafe = escapeHtml(event.slug || '');
+    const category = inferCategory(event);
+    const categoryColor = categoryColors[category] || categoryColors['default'];
+
+    const eventEl = document.createElement('div');
+    eventEl.className = 'calendar-overview-event';
+    eventEl.dataset.category = category;
+    eventEl.style.borderLeftColor = categoryColor;
+    eventEl.onclick = (e) => { e.stopPropagation(); openEventLink(slugSafe, ''); };
+
+    eventEl.addEventListener('mouseenter', (e) => showEventTooltip(e, event));
+    eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
+    eventEl.addEventListener('mouseleave', hideEventTooltip);
+
+    eventEl.innerHTML = `
+        <img src="${imageUrl}" class="overview-event-image" alt="" onerror="this.style.display='none'">
+        <span class="overview-event-title">${title}</span>
+        <span class="overview-event-prob ${probClass}">${prob}%</span>
+    `;
+
+    container.appendChild(eventEl);
 }
 
 function renderCalendar(searchQuery = '') {
@@ -1279,31 +1237,33 @@ function showDayEvents(dateKey) {
     modalBody.innerHTML = '';
 
     dayEvents.forEach(event => {
-        const imageUrl = event.image_url || '';
-        const prob = getMainProb(event);
-        const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
-        const marketCount = event._marketCount || 1;
-        const searchQuery = event._searchQuery ? escapeHtml(event._searchQuery) : '';
-        const slugSafe = escapeHtml(event.slug || '');
-        const hasLink = slugSafe || searchQuery;
-
-        const eventEl = document.createElement('div');
-        eventEl.className = `modal-event-item${!hasLink ? ' disabled' : ''}`;
-        if (hasLink) {
-            eventEl.onclick = () => openEventLink(event.slug, event._searchQuery);
-        }
-        eventEl.innerHTML = `
-            <img src="${imageUrl}" class="modal-event-image" alt="" onerror="this.style.display='none'">
-            <div class="modal-event-content">
-                <div class="modal-event-title">${event.title}</div>
-                <div class="modal-event-category">${event.category || 'Uncategorized'}${marketCount > 1 ? ` · ${marketCount}${translations[currentLang].markets}` : ''}</div>
-            </div>
-            <span class="modal-event-prob ${probClass}">${prob}%</span>
-        `;
-        modalBody.appendChild(eventEl);
+        renderModalEventItem(modalBody, event);
     });
 
     document.getElementById('modalOverlay').classList.add('active');
+}
+
+// 모달 개별 이벤트 아이템
+function renderModalEventItem(container, event) {
+    const imageUrl = event.image_url || '';
+    const prob = getMainProb(event);
+    const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
+    const slugSafe = escapeHtml(event.slug || '');
+
+    const eventEl = document.createElement('div');
+    eventEl.className = `modal-event-item${!slugSafe ? ' disabled' : ''}`;
+    if (slugSafe) {
+        eventEl.onclick = () => openEventLink(event.slug, '');
+    }
+    eventEl.innerHTML = `
+        <img src="${imageUrl}" class="modal-event-image" alt="" onerror="this.style.display='none'">
+        <div class="modal-event-content">
+            <div class="modal-event-title">${event.title}</div>
+            <div class="modal-event-category">${event.category || 'Uncategorized'}</div>
+        </div>
+        <span class="modal-event-prob ${probClass}">${prob}%</span>
+    `;
+    container.appendChild(eventEl);
 }
 
 function closeModal() {

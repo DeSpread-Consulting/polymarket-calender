@@ -1,5 +1,31 @@
 # 변경 이력
 
+## 2026-02-06
+
+### 이벤트 그룹화 기능 제거 (Rollback)
+
+#### 파일: `web/app.js`, `web/style.css`
+
+**변경 이유**:
+- 그룹화로 인한 UI 밀집도 증가 (답답한 느낌)
+- 폰트 크기 축소 시 가독성 저하 우려
+- 단순성 우선으로 원래 디자인으로 복원
+
+**제거된 기능**:
+1. `market_group` 기반 이벤트 그룹화
+2. 접이식 그룹 카드 UI (Week View, Calendar Overview, Modal)
+3. 그룹 확장/축소 상태 관리
+
+**제거된 코드**:
+- `app.js`: `expandedGroups`, `extractEventGroupKey()`, `buildGroupTitle()`, `groupEventsForDay()`, `toggleGroupExpand()`, `renderWeekGroupCard()`, `renderOverviewGroupItem()`, `renderModalGroupItem()`
+- `style.css`: 모든 그룹 관련 CSS (`.week-event-group`, `.week-group-*`, `.overview-group-*`, `.modal-group-*`)
+
+**현재 동작**:
+- 모든 이벤트가 개별 카드로 표시 (그룹화 없음)
+- 거래량 기준 상위 이벤트만 표시 (Week View: 전체, Overview: 상위 3개)
+
+---
+
 ## 2026-02-03
 
 ### UI/UX 디자인 시스템 전면 개편
