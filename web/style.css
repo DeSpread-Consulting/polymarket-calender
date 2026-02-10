@@ -813,6 +813,8 @@ body::after {
     display: flex;
     gap: 0;
     padding: 0;
+    align-items: stretch; /* 모든 날짜 칸이 같은 높이 유지 */
+    min-height: 500px; /* 최소 높이 보장 */
 }
 
 .week-day {
@@ -840,7 +842,9 @@ body::after {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center; /* 중앙 정렬 */
     padding: 16px 12px;
+    height: 90px; /* min-height 대신 고정 height 사용 */
     background: var(--bg-tertiary);
     border-bottom: 1px solid rgba(148, 163, 184, 0.2);
     position: sticky;
@@ -872,16 +876,20 @@ body::after {
 }
 
 .week-day-events {
+    flex: 1; /* 부모의 남은 공간을 모두 차지하여 동일한 높이 유지 */
     padding: 12px;
     overflow-y: auto;
     max-height: 600px;
+    min-height: 200px; /* 최소 높이로 일관성 유지 */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .week-event {
     background: linear-gradient(135deg, rgba(27, 34, 48, 0.95), rgba(21, 26, 36, 0.9));
     border-radius: 12px;
     padding: 12px;
-    margin-bottom: 8px;
     cursor: pointer;
     transition: all 0.2s ease-in-out;
     border-left: 4px solid var(--accent-blue);
@@ -1010,10 +1018,14 @@ body::after {
 }
 
 .week-no-events {
-    padding: 40px 20px;
+    flex: 1; /* 부모 영역을 가득 채움 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
     color: var(--text-muted);
     font-size: 13px;
+    padding: 20px;
 }
 
 /* Calendar Overview Section */

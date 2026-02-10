@@ -76,6 +76,7 @@ let supabaseClient = null;
 let allEvents = [];
 let currentDate = new Date();
 let calendarOverviewStartWeek = 0; // 0 = Week View 직후부터, 1 = 1주 더 뒤, etc.
+let isLoadingMore = false; // 추가 데이터 로딩 중 플래그
 
 // Filter state (기본값: 거래량 $10K 이상, 스포츠 카테고리 제외)
 let filters = {
@@ -207,8 +208,18 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('nextWeek').addEventListener('click', () => {
+    document.getElementById('nextWeek').addEventListener('click', async () => {
         calendarOverviewStartWeek++;
+
+        // 추가 데이터 필요 시 lazy loading
+        const todayKST = getKSTToday();
+        const requiredEndDate = addDays(todayKST, 5 + (calendarOverviewStartWeek + 1) * 7 + 21);
+        const lastEventDate = allEvents.length > 0 ? toKSTDateString(allEvents[allEvents.length - 1].end_date) : '';
+
+        if (requiredEndDate > lastEventDate) {
+            await loadMoreData(requiredEndDate);
+        }
+
         renderCalendar();
     });
 
@@ -512,35 +523,144 @@ function positionTooltip(event) {
     tooltipElement.style.top = y + 'px';
 }
 
+// 🎯 그룹화된 시장 통합 (예: Elon Musk 트윗 37개 옵션 → 1개 카드)
+function groupSimilarMarkets(events) {
+    const groups = new Map();
+
+    events.forEach(event => {
+        // slug 정규화 (openEventLink와 동일한 로직)
+        let normalized = event.slug;
+
+        // 패턴 1: 온도 시장 (연도-온도값[단위][옵션])
+        const tempPattern = /-\d{4}-\d+-?\d*[cf](?:orhigher|orbelow)?$/;
+
+        // 패턴 2: 숫자 범위 시장 (날짜-숫자범위)
+        const numericPattern = /-\d+-\d+$/;
+
+        // 패턴 2-1: 플러스 패턴 (예: 580+, 140+)
+        const plusPattern = /-\d+plus$/;
+
+        // 패턴 3: 가격 above/below
+        const priceAboveBelow = /-(above|below)-[\d]+(?:pt\d+)?k?-on-/;
+
+        // 패턴 4: 가격 between
+        const priceBetween = /-be-between-\d+-\d+-on-/;
+
+        if (tempPattern.test(normalized)) {
+            // 온도 범위 부분 제거
+            normalized = normalized.replace(tempPattern, '');
+        } else if (priceAboveBelow.test(normalized)) {
+            // 가격 above/below: 가격 숫자 제거
+            normalized = normalized.replace(/-(above|below)-[\d]+(?:pt\d+)?k?-on-/, '-$1-on-');
+        } else if (priceBetween.test(normalized)) {
+            // 가격 between: 전체 구조 변경
+            normalized = normalized.replace(/will-the-price-of-([^-]+)-be-between-\d+-\d+-on-(.+)/, '$1-price-on-$2');
+        } else if (plusPattern.test(normalized)) {
+            // 플러스 패턴 제거 (예: -580plus → '')
+            normalized = normalized.replace(plusPattern, '');
+        } else if (numericPattern.test(normalized) && !/-15m-\d+$/.test(normalized)) {
+            // 숫자 범위 부분 제거 (타임스탬프 제외)
+            normalized = normalized.replace(numericPattern, '');
+        }
+
+        // 그룹 키 = 정규화된 slug + 종료 시간
+        const groupKey = `${normalized}|${event.end_date}`;
+
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, []);
+        }
+        groups.get(groupKey).push(event);
+    });
+
+    // 각 그룹에서 가장 높은 확률을 가진 이벤트만 선택
+    const deduplicated = [];
+    let groupedCount = 0;
+
+    groups.forEach(group => {
+        if (group.length === 1) {
+            // 단일 시장 → 그대로 표시
+            deduplicated.push(group[0]);
+        } else {
+            // 그룹화된 시장 → Yes 확률이 가장 높은 옵션만 표시
+            groupedCount++;
+            const best = group.reduce((best, curr) => {
+                // probs[0] = Yes 확률, probs[1] = No 확률
+                const bestYesProb = parseFloat(best.probs[0]);
+                const currYesProb = parseFloat(curr.probs[0]);
+                return currYesProb > bestYesProb ? curr : best;
+            });
+            deduplicated.push(best);
+        }
+    });
+
+    if (groupedCount > 0) {
+        console.log(`🎯 ${groupedCount}개 그룹 통합됨 (${events.length}개 → ${deduplicated.length}개)`);
+    }
+
+    return deduplicated;
+}
+
 async function loadData() {
     console.log('📥 데이터 로드 시작');
 
     if (!supabaseClient) {
         console.log('⚠️ Supabase 없음 - 데모 데이터 사용');
         allEvents = generateDemoData();
+        // 🎯 그룹화 적용
+        allEvents = groupSimilarMarkets(allEvents);
         extractTags();
         extractCategories();
         return;
     }
 
+    // 🚀 개선 3: 캐시 확인 (LocalStorage)
+    const cacheKey = 'polymarket_events_cache';
+    const cacheTimeKey = 'polymarket_cache_time';
+    const CACHE_DURATION = 5 * 60 * 1000; // 5분
+
     try {
-        const PAGE_SIZE = 500;
+        const cachedData = localStorage.getItem(cacheKey);
+        const cacheTime = localStorage.getItem(cacheTimeKey);
+
+        if (cachedData && cacheTime) {
+            const age = Date.now() - parseInt(cacheTime);
+            if (age < CACHE_DURATION) {
+                console.log('✅ 캐시에서 로드 (', Math.round(age / 1000), '초 전)');
+                allEvents = JSON.parse(cachedData);
+                // 🎯 그룹화 적용
+                allEvents = groupSimilarMarkets(allEvents);
+                extractTags();
+                extractCategories();
+                return;
+            } else {
+                console.log('⚠️ 캐시 만료됨, 새로 로드');
+            }
+        }
+    } catch (e) {
+        console.log('⚠️ 캐시 로드 실패, 새로 로드');
+    }
+
+    try {
+        const PAGE_SIZE = 1000; // 페이지 크기 증가 (요청 횟수 감소)
         let allData = [];
         let offset = 0;
         let hasMore = true;
 
-        // 현재 시간부터 30일 후까지만 가져오기 (초기 로딩 속도 개선)
         const now = new Date().toISOString();
-        const thirtyDaysLater = new Date();
-        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
-        const maxDate = thirtyDaysLater.toISOString();
+
+        // 🚀 개선 1: Week View (5일) + Upcoming (3주) 전체 로드
+        const upcomingWeeks = new Date();
+        upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21); // Week View 5일 + Upcoming 3주
+        const maxDate = upcomingWeeks.toISOString();
 
         while (hasMore) {
             const { data, error } = await supabaseClient
                 .from('poly_events')
-                .select('*')
+                // 🚀 개선 2: 필요한 필드만 선택 (전송량 60% 감소)
+                .select('id, title, slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags')
                 .gte('end_date', now)  // 현재 이후
-                .lte('end_date', maxDate)  // 30일 이내
+                .lte('end_date', maxDate)  // 5일 이내
+                .gte('volume', 10000)  // 서버 레벨 필터링 (거래량 $10K 이상)
                 .order('end_date', { ascending: true })
                 .range(offset, offset + PAGE_SIZE - 1);
 
@@ -558,11 +678,26 @@ async function loadData() {
 
         console.log('✅ 데이터 로드 성공:', allData.length, '건');
         allEvents = allData;
+
+        // 🎯 그룹화 적용 (캐시 저장 전)
+        allEvents = groupSimilarMarkets(allEvents);
+
+        // 🚀 개선 3: 캐시에 저장
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify(allEvents));
+            localStorage.setItem(cacheTimeKey, Date.now().toString());
+            console.log('💾 캐시에 저장 완료');
+        } catch (e) {
+            console.warn('⚠️ 캐시 저장 실패 (용량 초과 가능성):', e);
+        }
+
         extractTags();
         extractCategories();
     } catch (error) {
         console.error('❌ 데이터 로드 실패:', error);
         allEvents = generateDemoData();
+        // 🎯 그룹화 적용
+        allEvents = groupSimilarMarkets(allEvents);
         extractTags();
     }
 }
@@ -613,6 +748,57 @@ function extractCategories() {
         }, {});
 
     allCategories = sortedCategories;
+}
+
+// 추가 데이터 로딩 (Calendar Overview에서 스크롤 시)
+async function loadMoreData(targetDate) {
+    if (!supabaseClient || isLoadingMore) return;
+
+    isLoadingMore = true;
+    console.log('📥 추가 데이터 로딩 중...');
+
+    try {
+        const lastEvent = allEvents[allEvents.length - 1];
+        const startDate = lastEvent ? lastEvent.end_date : new Date().toISOString();
+
+        const { data, error } = await supabaseClient
+            .from('poly_events')
+            .select('id, title, slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags')
+            .gte('end_date', startDate)
+            .lte('end_date', targetDate)
+            .gte('volume', 10000)
+            .order('end_date', { ascending: true })
+            .limit(1000);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+            // 중복 제거
+            const existingIds = new Set(allEvents.map(e => e.id));
+            const newEvents = data.filter(e => !existingIds.has(e.id));
+
+            allEvents = allEvents.concat(newEvents);
+            console.log('✅ 추가 로드:', newEvents.length, '건');
+
+            // 🎯 전체 데이터 재그룹화 (새 이벤트가 기존 그룹에 속할 수 있음)
+            allEvents = groupSimilarMarkets(allEvents);
+
+            // 캐시 업데이트
+            try {
+                localStorage.setItem('polymarket_events_cache', JSON.stringify(allEvents));
+                localStorage.setItem('polymarket_cache_time', Date.now().toString());
+            } catch (e) {
+                console.warn('⚠️ 캐시 업데이트 실패');
+            }
+
+            extractTags();
+            extractCategories();
+        }
+    } catch (error) {
+        console.error('❌ 추가 데이터 로드 실패:', error);
+    } finally {
+        isLoadingMore = false;
+    }
 }
 
 function generateDemoData() {
@@ -1226,15 +1412,39 @@ function openEventLink(slug, searchQuery) {
 
         // 패턴 2: 숫자 범위 시장 (날짜-숫자범위)
         // 예: -february-10-380-399, -december-16-260-279
-        // 주의: 날짜 부분은 유지하고 마지막 숫자 범위만 제거
         const numericRangePattern = /-(\d+-\d+)$/;
+
+        // 패턴 2-1: 플러스 패턴 (예: 580+, 140+)
+        // 예: elon-musk-of-tweets-february-6-february-13-580plus
+        const plusPattern = /-\d+plus$/;
+
+        // 패턴 3: 가격 above/below (coin-above-price-on-date)
+        // 예: ethereum-above-2600-on-february-10 → ethereum-above-on-february-10
+        // 소수점 표기: xrp-above-1pt5-on → xrp-above-on
+        const priceAboveBelowPattern = /-(above|below)-[\d]+(?:pt\d+)?k?-on-/;
+
+        // 패턴 4: 가격 between (be-between-price1-price2)
+        // 예: bitcoin-be-between-74000-76000-on → bitcoin-price-on
+        const priceBetweenPattern = /-be-between-\d+-\d+-on-/;
 
         if (tempRangePattern.test(slug)) {
             // 온도 범위 부분 제거 (연도까지만 유지)
             normalizedSlug = slug.replace(tempRangePattern, '-$1');
+        } else if (priceAboveBelowPattern.test(slug)) {
+            // 가격 above/below: 가격 숫자 제거 (소수점 포함)
+            normalizedSlug = slug.replace(/-(above|below)-[\d]+(?:pt\d+)?k?-on-/, '-$1-on-');
+        } else if (priceBetweenPattern.test(slug)) {
+            // 가격 between: 전체 구조 변경
+            normalizedSlug = slug.replace(/will-the-price-of-([^-]+)-be-between-\d+-\d+-on-(.+)/, '$1-price-on-$2');
+        } else if (plusPattern.test(slug)) {
+            // 플러스 패턴 제거 (예: -580plus → '')
+            normalizedSlug = slug.replace(plusPattern, '');
         } else if (numericRangePattern.test(slug)) {
-            // 숫자 범위 부분 제거
-            normalizedSlug = slug.replace(numericRangePattern, '');
+            // 숫자 범위 부분 제거 (트윗 수 등)
+            // 단, 타임스탬프 패턴은 제외 (updown-15m-숫자)
+            if (!/-15m-\d+$/.test(slug)) {
+                normalizedSlug = slug.replace(numericRangePattern, '');
+            }
         }
 
         // 단일 마켓은 직접 링크
