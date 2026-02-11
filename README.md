@@ -1,11 +1,6 @@
 # Polymarket Event Calendar
 
 Polymarket 예측 시장을 캘린더 형식으로 시각화하는 웹 애플리케이션입니다.
-
-> **라이브 데모**: [여기에 배포 URL 추가]
-
-![Polymarket Calendar Screenshot](https://via.placeholder.com/800x400?text=Calendar+Screenshot)
-
 ---
 
 ## 📌 주요 기능
