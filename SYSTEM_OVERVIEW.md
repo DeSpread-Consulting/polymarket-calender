@@ -44,15 +44,22 @@ Polymarket 시장 페이지 (새 탭)
 ### 파일 구조
 ```
 폴리마켓 커뮤니티/
-├── web/
-│   ├── app.js              # 메인 로직 (1455 lines)
-│   ├── style.css           # 스타일
-│   ├── index.html          # HTML 구조
-│   ├── config.js           # Supabase 설정
-│   └── .vercel/            # Vercel 배포 설정
+├── index.html              # 메인 HTML
+├── app.js                  # 메인 로직 (1455 lines)
+├── style.css               # 스타일
+├── config.js               # Supabase 설정
+├── .vercel/                # Vercel 배포 설정
+├── etl/                    # ETL 파이프라인 (백그라운드)
+│   ├── main.py             # ETL 메인 스크립트
+│   ├── requirements.txt    # Python 의존성
+│   ├── schema.sql          # DB 스키마
+│   ├── migration.sql       # 마이그레이션
+│   ├── translate_titles.py # 번역 스크립트
+│   └── README.md           # ETL 문서
+├── .github/workflows/      # GitHub Actions
 ├── AGENT_GUIDELINES.md     # AI 에이전트 작업 지침서
 ├── SYSTEM_OVERVIEW.md      # 이 파일
-└── README.md               # 프로젝트 문서
+└── README.md               # 프로젝트 문서 (캘린더 앱 중심)
 ```
 
 ---
@@ -129,6 +136,45 @@ const numericRangePattern = /-(\d+-\d+)$/;
 
 ## 5. 최근 수정 내역
 
+### 2026-02-11: 프로젝트 구조 재구성 및 문서화
+
+**목적**:
+- 캘린더 앱을 메인으로 강조 (기존: ETL이 메인처럼 보임)
+- GitHub 저장소만 보고 개발자/디자이너가 바로 이해하고 통합 가능하게 문서화
+- 기존 커뮤니티에 캘린더 기능 통합을 위한 준비
+
+**변경사항**:
+
+1. **파일 구조 재구성**:
+   - `web/` 폴더 내용을 루트로 이동 (index.html, app.js, style.css 등)
+   - ETL 관련 파일을 `etl/` 폴더로 이동 (main.py, requirements.txt, schema.sql 등)
+   - GitHub Actions 워크플로우 경로 수정 (`requirements.txt` → `etl/requirements.txt`)
+
+2. **README.md 전면 재작성**:
+   - 캘린더 앱 중심으로 완전히 새로 작성
+   - 주요 기능, 빠른 시작, 통합 가이드 추가
+   - ETL은 부가 설명으로 축소 (etl/README.md로 분리)
+   - 고수준 개요 형식 (5-10페이지 분량)
+
+3. **etl/README.md 작성**:
+   - ETL 파이프라인 전용 문서 작성
+   - 설치, 실행, 트러블슈팅 포함
+   - "백그라운드 작업"임을 명시
+
+**결과**:
+- ✅ 저장소 루트에 `index.html` → 웹 앱임이 명확
+- ✅ README.md만 읽고도 캘린더 앱 이해 가능
+- ✅ 통합 가이드 제공 (iframe vs 코드 통합)
+- ✅ 개발자/디자이너가 바로 작업 시작 가능
+
+**파일 변경**:
+- 구조 변경: `web/` 제거, `etl/` 신규
+- 문서: `README.md` 재작성, `etl/README.md` 신규
+- 설정: `.github/workflows/etl-backup.yml` 경로 수정
+- `.gitignore`에 `.vercel` 추가
+
+---
+
 ### 2026-02-10: Week View 높이 불일치 문제 해결
 
 **문제 발견**:
@@ -154,9 +200,9 @@ const numericRangePattern = /-(\d+-\d+)$/;
 - ✅ 시각적 안정성 향상
 
 **코드 위치**:
-- `web/style.css:841-851` - `.week-day-header`에 `min-height: 90px` 추가
-- `web/style.css:812-816` - `.week-timeline`에 `align-items: stretch`, `min-height: 500px` 추가
-- `web/style.css:876-883` - `.week-day-events`에 `flex: 1` 추가
+- `style.css:841-851` - `.week-day-header`에 `min-height: 90px` 추가
+- `style.css:812-816` - `.week-timeline`에 `align-items: stretch`, `min-height: 500px` 추가
+- `style.css:876-883` - `.week-day-events`에 `flex: 1` 추가
 
 ---
 
@@ -189,8 +235,8 @@ const numericRangePattern = /-(\d+-\d+)$/;
 - ✅ API 요청: 37번 → 8번
 
 **코드 위치**:
-- `web/app.js:515-625` - `loadData()` 함수 개선
-- `web/app.js:626-675` - `loadMoreData()` 함수 추가 (lazy loading)
+- `app.js:515-625` - `loadData()` 함수 개선
+- `app.js:626-675` - `loadMoreData()` 함수 추가 (lazy loading)
 
 ---
 
@@ -228,7 +274,7 @@ const numericRangePattern = /-(\d+-\d+)$/;
 - ✅ 모든 기존 패턴 유지 (온도, 트윗)
 
 **코드 위치**:
-- `web/app.js:1222-1254` - `openEventLink()` 함수 패턴 확장
+- `app.js:1222-1254` - `openEventLink()` 함수 패턴 확장
 
 **검증 방법**:
 ```bash
@@ -237,6 +283,54 @@ SELECT title, slug FROM poly_events
 WHERE (title ILIKE '%above%' OR title ILIKE '%between%')
   AND title ILIKE '%price%';
 ```
+
+---
+
+### 2026-02-10: URL 404 문제 - "greater than/less than" 패턴 추가 (3차)
+
+**문제 발견**:
+- Solana 등 암호화폐 가격 시장 클릭 시 404 에러 재발
+- 예시 1: `will-the-price-of-solana-be-greater-than-130-on-february-12` → 404
+- 예시 2: `will-the-price-of-solana-be-less-than-40-on-february-12` → 404
+
+**원인 분석**:
+- DB 전수 조사 결과 54개 시장 발견 (Bitcoin 12개, Ethereum/Solana/XRP 각 14개)
+- "greater than"/"less than" 표현은 긴 형태 slug 사용
+- "above"/"below"와 같은 의미지만 다른 slug 형태
+- 실제 Polymarket URL은 `{coin}-price-on-{date}` 형태로 통합
+
+**해결 과정**:
+1. DB 쿼리로 패턴 탐색:
+   ```sql
+   SELECT title, slug FROM poly_events
+   WHERE (title ILIKE '%greater than%' OR title ILIKE '%less than%')
+     AND title ILIKE '%price%';
+   ```
+2. 실제 Polymarket URL 검증:
+   - `will-the-price-of-solana-be-greater-than-130-on-february-12` → 404
+   - `solana-above-130-on-february-12` → 404
+   - `solana-price-on-february-12` → 200 ✅
+   - `bitcoin-price-on-february-12` → 200 ✅
+   - `ethereum-price-on-february-12` → 200 ✅
+   - `xrp-price-on-february-12` → 200 ✅
+3. 정규식 패턴 5 추가:
+   - 패턴: `^will-the-price-of-([^-]+)-be-(?:greater-than|less-than)-\d+-on-(.+)$`
+   - 변환: `$1-price-on-$2`
+
+**결과**:
+- ✅ 54개 가격 시장 URL 정규화
+- ✅ 패턴: `will-the-price-of-{coin}-be-(greater-than|less-than)-{price}-on-{date}` → `{coin}-price-on-{date}`
+- ✅ 모든 암호화폐 지원 (Bitcoin, Ethereum, Solana, XRP)
+- ✅ 기존 4개 패턴 모두 유지
+
+**코드 위치**:
+- `app.js:1430-1444` - `openEventLink()` 패턴 5 추가
+- `app.js:549-563` - `groupSimilarMarkets()` 패턴 5 추가
+
+**패턴 진화 요약**:
+1. **1차**: 온도 시장, 트윗 수 시장 (패턴 1, 2)
+2. **2차**: 가격 above/below, 가격 between (패턴 3, 4)
+3. **3차**: 가격 greater than/less than (패턴 5) ← 현재
 
 ---
 
@@ -256,7 +350,7 @@ WHERE (title ILIKE '%above%' OR title ILIKE '%between%')
 2. 실제 Polymarket URL 테스트 (`curl` 활용)
 3. 패턴 인식 (온도 시장 + Elon Musk 트윗 시장)
 4. 정규식 작성 및 테스트
-5. `web/app.js:1209-1243` `openEventLink()` 함수 수정
+5. `app.js:1209-1243` `openEventLink()` 함수 수정
 
 **결과**:
 - ✅ 온도 시장: 모든 옵션 → 그룹 페이지로 정상 이동
@@ -348,5 +442,5 @@ console.log('Filtered events:', getFilteredEvents().length);
 
 ---
 
-*Last Updated: 2026-02-10*
+*Last Updated: 2026-02-11*
 *Created by: Claude Code (AI Agent)*

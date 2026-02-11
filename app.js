@@ -543,8 +543,11 @@ function groupSimilarMarkets(events) {
         // 패턴 3: 가격 above/below
         const priceAboveBelow = /-(above|below)-[\d]+(?:pt\d+)?k?-on-/;
 
-        // 패턴 4: 가격 between
-        const priceBetween = /-be-between-\d+-\d+-on-/;
+        // 패턴 4: 가격 between (소수점 지원)
+        const priceBetween = /-be-between-[\d]+(?:pt\d+)?-[\d]+(?:pt\d+)?-on-/;
+
+        // 패턴 5: greater than / less than (openEventLink와 동일, 소수점 지원)
+        const greaterLessThan = /^will-the-price-of-([^-]+)-be-(?:greater-than|less-than)-[\d]+(?:pt\d+)?-on-(.+)$/;
 
         if (tempPattern.test(normalized)) {
             // 온도 범위 부분 제거
@@ -553,8 +556,11 @@ function groupSimilarMarkets(events) {
             // 가격 above/below: 가격 숫자 제거
             normalized = normalized.replace(/-(above|below)-[\d]+(?:pt\d+)?k?-on-/, '-$1-on-');
         } else if (priceBetween.test(normalized)) {
-            // 가격 between: 전체 구조 변경
-            normalized = normalized.replace(/will-the-price-of-([^-]+)-be-between-\d+-\d+-on-(.+)/, '$1-price-on-$2');
+            // 가격 between: 전체 구조 변경 (소수점 지원)
+            normalized = normalized.replace(/will-the-price-of-([^-]+)-be-between-[\d]+(?:pt\d+)?-[\d]+(?:pt\d+)?-on-(.+)/, '$1-price-on-$2');
+        } else if (greaterLessThan.test(normalized)) {
+            // 🆕 패턴 5: greater/less than 변환
+            normalized = normalized.replace(greaterLessThan, '$1-price-on-$2');
         } else if (plusPattern.test(normalized)) {
             // 플러스 패턴 제거 (예: -580plus → '')
             normalized = normalized.replace(plusPattern, '');
@@ -1425,7 +1431,13 @@ function openEventLink(slug, searchQuery) {
 
         // 패턴 4: 가격 between (be-between-price1-price2)
         // 예: bitcoin-be-between-74000-76000-on → bitcoin-price-on
-        const priceBetweenPattern = /-be-between-\d+-\d+-on-/;
+        // 소수점 지원: xrp-between-0pt90-1pt00 (XRP $0.90-$1.00)
+        const priceBetweenPattern = /-be-between-[\d]+(?:pt\d+)?-[\d]+(?:pt\d+)?-on-/;
+
+        // 패턴 5: greater than / less than
+        // 예: will-the-price-of-solana-be-greater-than-130-on-february-12 → solana-price-on-february-12
+        // 소수점 지원: xrp-greater-than-1pt70 (XRP $1.70)
+        const greaterLessThanPattern = /^will-the-price-of-([^-]+)-be-(?:greater-than|less-than)-[\d]+(?:pt\d+)?-on-(.+)$/;
 
         if (tempRangePattern.test(slug)) {
             // 온도 범위 부분 제거 (연도까지만 유지)
@@ -1434,8 +1446,11 @@ function openEventLink(slug, searchQuery) {
             // 가격 above/below: 가격 숫자 제거 (소수점 포함)
             normalizedSlug = slug.replace(/-(above|below)-[\d]+(?:pt\d+)?k?-on-/, '-$1-on-');
         } else if (priceBetweenPattern.test(slug)) {
-            // 가격 between: 전체 구조 변경
-            normalizedSlug = slug.replace(/will-the-price-of-([^-]+)-be-between-\d+-\d+-on-(.+)/, '$1-price-on-$2');
+            // 가격 between: 전체 구조 변경 (소수점 지원)
+            normalizedSlug = slug.replace(/will-the-price-of-([^-]+)-be-between-[\d]+(?:pt\d+)?-[\d]+(?:pt\d+)?-on-(.+)/, '$1-price-on-$2');
+        } else if (greaterLessThanPattern.test(slug)) {
+            // 🆕 패턴 5: greater/less than 변환
+            normalizedSlug = slug.replace(greaterLessThanPattern, '$1-price-on-$2');
         } else if (plusPattern.test(slug)) {
             // 플러스 패턴 제거 (예: -580plus → '')
             normalizedSlug = slug.replace(plusPattern, '');
