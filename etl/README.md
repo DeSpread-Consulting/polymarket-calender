@@ -19,8 +19,10 @@ Polymarket API에서 예측 시장 데이터를 수집하여 Supabase에 저장�
 | 필드 | 설명 |
 |------|------|
 | `id` | 시장 고유 ID |
-| `title` | 베팅 질문 |
+| `title` | 베팅 질문 (영문) |
+| `title_ko` | 베팅 질문 (한글 번역) |
 | `slug` | URL용 슬러그 |
+| `event_slug` | 이벤트 슬러그 |
 | `end_date` | 마감 일시 |
 | `volume` | 총 거래량 (USD) |
 | `volume_24hr` | 24시간 거래량 |
@@ -28,6 +30,7 @@ Polymarket API에서 예측 시장 데이터를 수집하여 Supabase에 저장�
 | `outcomes` | 결과 옵션명 (JSONB) |
 | `category` | 카테고리 |
 | `tags` | 태그 배열 |
+| `market_group` | 시장 그룹 |
 | `image_url` | 썸네일 이미지 |
 | `api_created_at` | 이벤트 생성일 |
 | `closed` | 정산 완료 여부 |
@@ -48,6 +51,7 @@ pip install -r requirements.txt
 requests
 python-dotenv
 supabase
+openai
 ```
 
 ### 2. 환경 변수 설정
@@ -64,10 +68,12 @@ cp .env.example .env
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-service-role-key
+OPENAI_API_KEY=your-openai-api-key
 ```
 
 > **중요**: ETL 파이프라인은 **service_role key**가 필요합니다 (RLS 우회).
 > 웹 앱의 anon key와는 다릅니다.
+> 번역 기능을 사용하려면 **OPENAI_API_KEY**도 필요합니다.
 
 ### 3. 수동 실행
 
@@ -127,12 +133,14 @@ GitHub Actions 페이지에서 "Run workflow" 버튼 클릭
 
 ```
 etl/
-├── main.py              # ETL 메인 스크립트
-├── requirements.txt     # Python 의존성
-├── schema.sql          # 테이블 생성 SQL
-├── migration.sql       # 마이그레이션 SQL
-├── translate_titles.py # 제목 번역 스크립트 (옵션)
-└── README.md           # 이 파일
+├── main.py                # ETL 메인 스크립트 (Polymarket API 동기화)
+├── translate.py           # 한글 번역 통합 스크립트 (OpenAI)
+├── postprocess.py         # 번역 후처리 모듈
+├── translation_prompt.md  # 번역 프롬프트 규칙
+├── requirements.txt       # Python 의존성
+├── schema.sql             # 테이블 생성 SQL
+├── migration.sql          # 마이그레이션 SQL
+└── README.md              # 이 파일
 ```
 
 ### main.py
@@ -157,13 +165,31 @@ for market in markets:
 supabase.table('poly_events').upsert(event).execute()
 ```
 
-### translate_titles.py
+### translate.py
 
-제목을 한국어로 번역하는 스크립트 (필요 시 사용):
+시장 제목을 한국어로 번역하는 통합 스크립트:
 
 ```bash
-python etl/translate_titles.py
+# 기본 (2개월, 미번역만)
+python etl/translate.py
+
+# Sports 제외, 6개월, 5워커
+python etl/translate.py --exclude-sports --months 6 --workers 5
+
+# 기존 번역 포함 재번역
+python etl/translate.py --exclude-sports --months 6 --workers 5 --overwrite
+
+# 테스트 (1배치만)
+python etl/translate.py --test
 ```
+
+### postprocess.py
+
+번역 후처리 모듈 (translate.py에서 자동 호출):
+- 용어 통일 (glossary)
+- "가질까" 직역 보정
+- 문화 맥락 보정 (Spring Festival Gala → 춘절 갈라쇼 등)
+- 영문 월 → 숫자 변환 (February → 2월)
 
 ---
 
@@ -293,7 +319,6 @@ Supabase poly_events
 ## 📚 관련 문서
 
 - **[../README.md](../README.md)**: 캘린더 앱 메인 문서
-- **[../SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md)**: 전체 시스템 아키텍처
 
 ---
 
