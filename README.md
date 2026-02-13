@@ -286,13 +286,9 @@ vercel --prod
 
 ## 🤝 기여
 
-이슈와 PR은 언제나 환영합니다!
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+이슈가 발견된다면 한번 곰곰히 생각해 봅시다. 
+내가 해결할 문제인지 아닌지. 
+감사합니다.
 
 ---
 
@@ -309,4 +305,4 @@ vercel --prod
 
 ---
 
-** Made by Coblin
+**Made by Coblin
