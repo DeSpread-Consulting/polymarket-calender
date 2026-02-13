@@ -14,5 +14,13 @@ venv/
 # macOS
 .DS_Store
 
+# AI 관련 문서
+AGENT_GUIDELINES.md
+SYSTEM_OVERVIEW.md
+CHANGELOG.md
+docs/
+.claude/
+.clauderules
+
 # Vercel
 .vercel
