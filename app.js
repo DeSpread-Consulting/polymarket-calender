@@ -269,7 +269,8 @@ function setupEventListeners() {
         const tagsContainer = document.getElementById('filterTags');
         tagsContainer.classList.toggle('collapsed');
         const btn = document.getElementById('showLessTags');
-        btn.textContent = tagsContainer.classList.contains('collapsed') ? 'Show More' : 'Show Less';
+        const t = translations[currentLang];
+        btn.textContent = tagsContainer.classList.contains('collapsed') ? t.showMore : t.showLess;
     });
 
     // Apply/Reset filters
@@ -1579,6 +1580,12 @@ const translations = {
         timeRemaining: '남은 시간',
         minVolume: '최소 거래량',
         minLiquidity: '최소 유동성',
+        tagsLabel: '태그:',
+        searchTagsPlaceholder: '태그 검색...',
+        showMore: '더보기',
+        showLess: '접기',
+        resetBtn: '초기화',
+        applyFiltersBtn: '필터 적용',
         all: '전체',
         days: '일',
         dataRangeInfo: '앞으로 30일 이내 이벤트만 표시',
@@ -1619,6 +1626,12 @@ const translations = {
         timeRemaining: 'Time remaining',
         minVolume: 'Min Volume',
         minLiquidity: 'Min Liquidity',
+        tagsLabel: 'Tags:',
+        searchTagsPlaceholder: 'Search tags...',
+        showMore: 'Show More',
+        showLess: 'Show Less',
+        resetBtn: 'Reset',
+        applyFiltersBtn: 'Apply Filters',
         all: 'All',
         days: 'd',
         dataRangeInfo: 'Showing events within the next 30 days',
@@ -1715,6 +1728,55 @@ function translatePage() {
     if (langToggle) {
         langToggle.querySelector('.lang-text').textContent = currentLang.toUpperCase();
     }
+
+    // Filter modal labels
+    const filterModalTitle = document.getElementById('filterModalTitle');
+    if (filterModalTitle) filterModalTitle.textContent = t.filters;
+
+    const filterTagsLabel = document.getElementById('filterTagsLabel');
+    if (filterTagsLabel) filterTagsLabel.textContent = t.tagsLabel;
+
+    const tagSearchInput = document.getElementById('tagSearchInput');
+    if (tagSearchInput) tagSearchInput.placeholder = t.searchTagsPlaceholder;
+
+    const filterCategoriesLabel = document.getElementById('filterCategoriesLabel');
+    if (filterCategoriesLabel) filterCategoriesLabel.textContent = t.hideCategories + ':';
+
+    const filterTimeLabel = document.getElementById('filterTimeLabel');
+    if (filterTimeLabel) filterTimeLabel.textContent = t.timeRemaining + ':';
+
+    const filterVolumeLabel = document.getElementById('filterVolumeLabel');
+    if (filterVolumeLabel) filterVolumeLabel.textContent = t.minVolume + ':';
+
+    const filterLiquidityLabel = document.getElementById('filterLiquidityLabel');
+    if (filterLiquidityLabel) filterLiquidityLabel.textContent = t.minLiquidity + ':';
+
+    const showLessBtn = document.getElementById('showLessTags');
+    if (showLessBtn) {
+        const tagsContainer = document.getElementById('filterTags');
+        showLessBtn.textContent = tagsContainer && tagsContainer.classList.contains('collapsed') ? t.showMore : t.showLess;
+    }
+
+    const resetBtn = document.getElementById('resetFilters');
+    if (resetBtn) resetBtn.textContent = t.resetBtn;
+
+    const applyBtn = document.getElementById('applyFilters');
+    if (applyBtn) applyBtn.textContent = t.applyFiltersBtn;
+
+    // Time remaining filter options
+    document.querySelectorAll('#timeRemainingOptions .filter-option').forEach(btn => {
+        const val = btn.dataset.value;
+        if (val === 'all') {
+            btn.textContent = t.all;
+        } else {
+            btn.textContent = `< ${val}${t.days}`;
+        }
+    });
+
+    // Volume/Liquidity "All" button
+    document.querySelectorAll('#minVolumeOptions .filter-option, #minLiquidityOptions .filter-option').forEach(btn => {
+        if (btn.dataset.value === '0') btn.textContent = t.all;
+    });
 
     // Note: Quick filter chips are intentionally kept in English only
     // They are not translated to maintain consistency across languages

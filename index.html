@@ -167,7 +167,7 @@
         <div class="modal-overlay" id="filterModalOverlay">
             <div class="modal filter-modal">
                 <div class="modal-header">
-                    <h3 class="modal-title">Filters</h3>
+                    <h3 class="modal-title" id="filterModalTitle">Filters</h3>
                     <button class="modal-close" id="filterModalClose">&times;</button>
                 </div>
                 <div class="modal-body filter-modal-body">
@@ -178,7 +178,7 @@
                                 <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                                 <line x1="7" y1="7" x2="7.01" y2="7"></line>
                             </svg>
-                            Tags: <span id="tagCount">(0)</span>
+                            <span id="filterTagsLabel">Tags:</span> <span id="tagCount">(0)</span>
                             <button class="show-less-btn" id="showLessTags">Show Less</button>
                         </div>
                         <div class="filter-search">
@@ -195,7 +195,7 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path>
                             </svg>
-                            Hide Categories:
+                            <span id="filterCategoriesLabel">Hide Categories:</span>
                         </div>
                         <div class="filter-categories" id="filterCategories">
                             <!-- Categories will be populated dynamically -->
@@ -209,7 +209,7 @@
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <polyline points="12 6 12 12 16 14"></polyline>
                             </svg>
-                            Time remaining:
+                            <span id="filterTimeLabel">Time remaining:</span>
                         </div>
                         <div class="filter-options" id="timeRemainingOptions">
                             <button class="filter-option active" data-value="all">All</button>
@@ -226,7 +226,7 @@
                                 <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
                                 <polyline points="16 7 22 7 22 13"></polyline>
                             </svg>
-                            Min Volume:
+                            <span id="filterVolumeLabel">Min Volume:</span>
                         </div>
                         <div class="filter-options" id="minVolumeOptions">
                             <button class="filter-option active" data-value="0">All</button>
@@ -243,7 +243,7 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
                             </svg>
-                            Min Liquidity:
+                            <span id="filterLiquidityLabel">Min Liquidity:</span>
                         </div>
                         <div class="filter-options" id="minLiquidityOptions">
                             <button class="filter-option active" data-value="0">All</button>
