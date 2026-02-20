@@ -290,6 +290,7 @@ def transform_data(raw_data: list[dict]) -> list[dict]:
             "tags": tags,
             "image_url": item.get("image"),
             "closed": item.get("closed", False),  # 정산 여부
+            "description": item.get("description"),  # Rules/설명 텍스트
         }
 
         # id가 없는 레코드는 건너뛰기

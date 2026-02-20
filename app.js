@@ -144,6 +144,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     updateActiveFiltersDisplay(); // 기본 필터 UI 표시
     renderCalendar();
+
+    // V2 Admin 초기화 (supabaseClient 준비된 후 실행)
+    if (typeof initV2Admin === 'function') {
+        initV2Admin();
+    }
 });
 
 function initTheme() {
@@ -598,7 +603,7 @@ async function loadData() {
         return;
     }
 
-    // 🚀 개선 3: 캐시 확인 (LocalStorage)
+    // 🚀 개선 3: 캐시 확인 (LocalStorage + 서버 버전 체크)
     const cacheKey = 'polymarket_events_cache';
     const cacheTimeKey = 'polymarket_cache_time';
     const CACHE_DURATION = 5 * 60 * 1000; // 5분
@@ -610,13 +615,31 @@ async function loadData() {
         if (cachedData && cacheTime) {
             const age = Date.now() - parseInt(cacheTime);
             if (age < CACHE_DURATION) {
-                console.log('✅ 캐시에서 로드 (', Math.round(age / 1000), '초 전)');
-                allEvents = JSON.parse(cachedData);
-                // 🎯 그룹화 적용
-                allEvents = groupSimilarMarkets(allEvents);
-                extractTags();
-                extractCategories();
-                return;
+                // 서버 캐시 버전 확인 (관리자 수정 감지)
+                let cacheValid = true;
+                try {
+                    const { data: meta } = await supabaseClient
+                        .from('cache_meta')
+                        .select('last_updated')
+                        .eq('id', 1)
+                        .single();
+                    if (meta && new Date(meta.last_updated).getTime() > parseInt(cacheTime)) {
+                        console.log('⚠️ 관리자 수정 감지, 캐시 무효화');
+                        cacheValid = false;
+                    }
+                } catch (e) {
+                    // cache_meta 조회 실패 시 캐시 그대로 사용
+                }
+
+                if (cacheValid) {
+                    console.log('✅ 캐시에서 로드 (', Math.round(age / 1000), '초 전)');
+                    allEvents = JSON.parse(cachedData);
+                    // 🎯 그룹화 적용
+                    allEvents = groupSimilarMarkets(allEvents);
+                    extractTags();
+                    extractCategories();
+                    return;
+                }
             } else {
                 console.log('⚠️ 캐시 만료됨, 새로 로드');
             }
@@ -642,10 +665,11 @@ async function loadData() {
             const { data, error } = await supabaseClient
                 .from('poly_events')
                 // 🚀 개선 2: 필요한 필드만 선택 (전송량 60% 감소)
-                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags')
+                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
                 .gte('end_date', now)  // 현재 이후
                 .lte('end_date', maxDate)  // 5일 이내
                 .gte('volume', 1000)  // 서버 레벨 필터링 (거래량 $1K 이상, 암호화폐 포함)
+                .eq('hidden', false)  // 숨김 처리된 시장 제외
                 .order('end_date', { ascending: true })
                 .range(offset, offset + PAGE_SIZE - 1);
 
@@ -746,14 +770,21 @@ async function loadMoreData(targetDate) {
         const lastEvent = allEvents[allEvents.length - 1];
         const startDate = lastEvent ? lastEvent.end_date : new Date().toISOString();
 
-        const { data, error } = await supabaseClient
+        let query = supabaseClient
             .from('poly_events')
-            .select('id, title, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags')
+            .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden, description, description_ko')
             .gte('end_date', startDate)
             .lte('end_date', targetDate)
             .gte('volume', 1000)  // $1K 이상 (암호화폐 포함)
             .order('end_date', { ascending: true })
             .limit(1000);
+
+        // admin 모드가 아닐 때만 hidden 필터 적용
+        if (!isAdminMode) {
+            query = query.eq('hidden', false);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
 
@@ -1197,13 +1228,23 @@ function renderWeekEventCard(container, event) {
     eventEl.className = 'week-event';
     eventEl.style.borderLeftColor = categoryColor;
     eventEl.setAttribute('data-category', category);
+    if (event.hidden) eventEl.setAttribute('data-hidden', 'true');
     eventEl.onclick = () => openEventLink(slugSafe, '', eventSlugSafe);
 
     eventEl.addEventListener('mouseenter', (e) => showEventTooltip(e, event));
     eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
     eventEl.addEventListener('mouseleave', hideEventTooltip);
 
+    // Admin 컨트롤 (admin-mode일 때만 CSS로 표시)
+    const adminControls = `
+        <div class="admin-event-controls">
+            <button class="admin-ctrl-btn" onclick="event.stopPropagation(); v2OpenEditModal('${event.id}');" title="편집">&#9998;</button>
+            <button class="admin-ctrl-btn hide-btn" onclick="event.stopPropagation(); v2ToggleHidden('${event.id}');" title="${event.hidden ? '노출' : '숨김'}">${event.hidden ? '&#9711;' : '&#10005;'}</button>
+        </div>
+    `;
+
     eventEl.innerHTML = `
+        ${adminControls}
         <div class="week-event-time ${timeClass}">${time}</div>
         <div class="week-event-content">
             <div class="week-event-header">
@@ -1326,6 +1367,7 @@ function renderOverviewEventItem(container, event) {
     const eventEl = document.createElement('div');
     eventEl.className = 'calendar-overview-event';
     eventEl.dataset.category = category;
+    if (event.hidden) eventEl.setAttribute('data-hidden', 'true');
     eventEl.style.borderLeftColor = categoryColor;
     eventEl.onclick = (e) => { e.stopPropagation(); openEventLink(slugSafe, '', eventSlugSafe); };
 
@@ -1333,7 +1375,16 @@ function renderOverviewEventItem(container, event) {
     eventEl.addEventListener('mousemove', (e) => positionTooltip(e));
     eventEl.addEventListener('mouseleave', hideEventTooltip);
 
+    // Admin 컨트롤 (admin-mode일 때만 CSS로 표시)
+    const adminHtml = `
+        <div class="admin-event-controls overview-admin-controls">
+            <button class="admin-ctrl-btn" onclick="event.stopPropagation(); v2OpenEditModal('${event.id}');" title="편집">&#9998;</button>
+            <button class="admin-ctrl-btn hide-btn" onclick="event.stopPropagation(); v2ToggleHidden('${event.id}');" title="${event.hidden ? '노출' : '숨김'}">${event.hidden ? '&#9711;' : '&#10005;'}</button>
+        </div>
+    `;
+
     eventEl.innerHTML = `
+        ${adminHtml}
         <img src="${imageUrl}" class="overview-event-image" alt="" onerror="this.style.display='none'">
         <span class="overview-event-title">${title}</span>
         <span class="overview-event-prob ${probClass}">${prob}%</span>
@@ -1818,3 +1869,338 @@ window.getCurrentLang = () => currentLang;
 window.getTranslation = (key) => translations[currentLang][key] || key;
 window.getTranslatedCategory = getTranslatedCategory;
 window.showDayEvents = showDayEvents;
+
+
+// ═══════════════════════════════════════════════════════
+// ─── V2 Admin Inline Mode ───
+// ═══════════════════════════════════════════════════════
+
+let isAdminMode = false;
+let v2EditingEventId = null;
+
+// 초기화: DOMContentLoaded에서 supabaseClient 준비 후 호출됨
+async function initV2Admin() {
+    // admin-auth.js가 로드되지 않았으면 건너뜀
+    if (typeof getAdminSession === 'undefined') return;
+
+    const adminToggle = document.getElementById('adminToggle');
+    if (!adminToggle) return;
+
+    // 기존 세션 확인
+    try {
+        const session = await getAdminSession();
+        if (session) v2EnterAdminMode();
+    } catch (e) {
+        // 무시 — 로그인 안 된 상태
+    }
+
+    // 관리자 버튼 클릭
+    adminToggle.addEventListener('click', () => {
+        if (isAdminMode) {
+            v2ShowSignOutConfirm();
+        } else {
+            v2ShowLoginModal();
+        }
+    });
+
+    // 로그인 모달
+    const loginOverlay = document.getElementById('adminLoginOverlay');
+    if (loginOverlay) {
+        document.getElementById('adminLoginClose').addEventListener('click', v2CloseLoginModal);
+        document.getElementById('v2LoginCancel').addEventListener('click', v2CloseLoginModal);
+        loginOverlay.addEventListener('click', (e) => {
+            if (e.target === loginOverlay) v2CloseLoginModal();
+        });
+        document.getElementById('v2LoginSubmit').addEventListener('click', v2HandleLogin);
+        // Enter key
+        document.getElementById('v2AdminPassword').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') v2HandleLogin();
+        });
+    }
+
+    // 편집 모달
+    const editOverlay = document.getElementById('v2EditOverlay');
+    if (editOverlay) {
+        document.getElementById('v2EditClose').addEventListener('click', v2CloseEditModal);
+        document.getElementById('v2EditCancel').addEventListener('click', v2CloseEditModal);
+        editOverlay.addEventListener('click', (e) => {
+            if (e.target === editOverlay) v2CloseEditModal();
+        });
+        document.getElementById('v2EditSave').addEventListener('click', v2SaveEdit);
+    }
+
+    // 로그아웃
+    const signOutBtn = document.getElementById('v2SignOut');
+    if (signOutBtn) {
+        signOutBtn.addEventListener('click', v2HandleSignOut);
+    }
+
+    // Auth state 변화 감지
+    onAdminAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN') v2EnterAdminMode();
+        if (event === 'SIGNED_OUT') v2ExitAdminMode();
+    });
+
+    // ESC 키로 모달 닫기
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (document.getElementById('v2EditOverlay')?.classList.contains('active')) {
+                v2CloseEditModal();
+            } else if (document.getElementById('adminLoginOverlay')?.classList.contains('active')) {
+                v2CloseLoginModal();
+            }
+        }
+    });
+}
+
+function v2ShowLoginModal() {
+    document.getElementById('adminLoginOverlay').classList.add('active');
+    document.getElementById('v2AdminEmail').focus();
+}
+
+function v2CloseLoginModal() {
+    document.getElementById('adminLoginOverlay').classList.remove('active');
+    document.getElementById('v2LoginError').textContent = '';
+    document.getElementById('v2AdminEmail').value = '';
+    document.getElementById('v2AdminPassword').value = '';
+}
+
+async function v2HandleLogin() {
+    const errorEl = document.getElementById('v2LoginError');
+    errorEl.textContent = '';
+    try {
+        await adminSignIn(
+            document.getElementById('v2AdminEmail').value,
+            document.getElementById('v2AdminPassword').value
+        );
+        v2CloseLoginModal();
+    } catch (err) {
+        errorEl.textContent = err.message;
+    }
+}
+
+async function v2EnterAdminMode() {
+    isAdminMode = true;
+    document.body.classList.add('admin-mode');
+
+    // 통계 배너 표시
+    document.getElementById('adminStatsBanner').style.display = 'block';
+    await v2LoadStats();
+
+    // hidden 이벤트 포함해서 데이터 리로드
+    await v2ReloadWithHidden();
+}
+
+function v2ExitAdminMode() {
+    isAdminMode = false;
+    document.body.classList.remove('admin-mode');
+    document.getElementById('adminStatsBanner').style.display = 'none';
+
+    // hidden 필터 복원하여 리로드
+    localStorage.removeItem('polymarket_events_cache');
+    localStorage.removeItem('polymarket_cache_time');
+    loadData().then(() => renderCalendar());
+}
+
+function v2ShowSignOutConfirm() {
+    if (confirm('관리자 모드를 종료하시겠습니까?')) {
+        v2HandleSignOut();
+    }
+}
+
+async function v2HandleSignOut() {
+    await adminSignOut();
+}
+
+async function v2LoadStats() {
+    try {
+        const now = new Date().toISOString();
+        const [totalRes, translatedRes, hiddenRes] = await Promise.all([
+            supabaseClient.from('poly_events')
+                .select('id', { count: 'exact', head: true })
+                .gte('end_date', now).eq('closed', false),
+            supabaseClient.from('poly_events')
+                .select('id', { count: 'exact', head: true })
+                .gte('end_date', now).eq('closed', false)
+                .not('title_ko', 'is', null),
+            supabaseClient.from('poly_events')
+                .select('id', { count: 'exact', head: true })
+                .gte('end_date', now).eq('hidden', true),
+        ]);
+        const total = totalRes.count || 0;
+        const translated = translatedRes.count || 0;
+        const hidden = hiddenRes.count || 0;
+        document.getElementById('v2StatInfo').textContent =
+            `전체 ${total.toLocaleString()} | 번역 ${translated.toLocaleString()} | 미번역 ${(total - translated).toLocaleString()} | 숨김 ${hidden.toLocaleString()}`;
+    } catch (e) {
+        console.error('Admin stats error:', e);
+    }
+}
+
+async function v2ReloadWithHidden() {
+    // hidden 포함 전체 데이터 로드 (캐시 무시)
+    if (!supabaseClient) return;
+    try {
+        const now = new Date().toISOString();
+        const upcomingWeeks = new Date();
+        upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21);
+        const maxDate = upcomingWeeks.toISOString();
+
+        let allData = [];
+        let offset = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data, error } = await supabaseClient
+                .from('poly_events')
+                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden, description, description_ko')
+                .gte('end_date', now)
+                .lte('end_date', maxDate)
+                .gte('volume', 1000)
+                // hidden 필터 제거 — admin은 전부 봄
+                .order('end_date', { ascending: true })
+                .range(offset, offset + 999);
+
+            if (error) throw error;
+            if (data && data.length > 0) {
+                allData = allData.concat(data);
+                offset += 1000;
+                hasMore = data.length === 1000;
+            } else {
+                hasMore = false;
+            }
+        }
+
+        allEvents = groupSimilarMarkets(allData);
+        extractTags();
+        extractCategories();
+        renderCalendar();
+    } catch (e) {
+        console.error('Admin reload error:', e);
+    }
+}
+
+// 편집 모달
+function v2OpenEditModal(eventId) {
+    // allEvents에서 또는 그룹된 이벤트에서 찾기
+    const event = allEvents.find(e => e.id === eventId);
+    if (!event) return;
+
+    v2EditingEventId = eventId;
+    document.getElementById('v2EditTitleEn').textContent = event.title || '';
+    document.getElementById('v2EditTitleKo').value = event.title_ko || '';
+    document.getElementById('v2EditCategory').value = event.category || 'Uncategorized';
+    document.getElementById('v2EditDescription').textContent = event.description || '(설명 없음)';
+    document.getElementById('v2EditDescriptionKo').value = event.description_ko || '';
+
+    // Polymarket 링크 설정
+    const linkEl = document.getElementById('v2EditPolyLink');
+    if (linkEl) {
+        const slug = event.event_slug || event.slug || '';
+        if (slug) {
+            linkEl.href = `https://polymarket.com/event/${slug}`;
+            linkEl.style.display = 'inline-flex';
+        } else {
+            linkEl.style.display = 'none';
+        }
+    }
+
+    document.getElementById('v2EditOverlay').classList.add('active');
+}
+
+function v2CloseEditModal() {
+    v2EditingEventId = null;
+    document.getElementById('v2EditOverlay').classList.remove('active');
+}
+
+async function v2SaveEdit() {
+    if (!v2EditingEventId) return;
+    const saveBtn = document.getElementById('v2EditSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '저장 중...';
+
+    try {
+        const updates = {
+            title_ko: document.getElementById('v2EditTitleKo').value.trim() || null,
+            category: document.getElementById('v2EditCategory').value,
+            description_ko: document.getElementById('v2EditDescriptionKo').value.trim() || null,
+        };
+
+        const { error } = await supabaseClient
+            .from('poly_events')
+            .update(updates)
+            .eq('id', v2EditingEventId);
+
+        if (error) throw error;
+
+        // 로컬 업데이트
+        const event = allEvents.find(e => e.id === v2EditingEventId);
+        if (event) Object.assign(event, updates);
+
+        renderCalendar();
+        v2CloseEditModal();
+        v2ShowToast('저장 완료', 'success');
+        v2LoadStats();
+
+        // 캐시 무효화 (로컬 + 서버)
+        localStorage.removeItem('polymarket_events_cache');
+        localStorage.removeItem('polymarket_cache_time');
+        bumpCacheVersion();
+    } catch (err) {
+        v2ShowToast('저장 실패: ' + err.message, 'error');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '저장';
+    }
+}
+
+async function v2ToggleHidden(eventId) {
+    const event = allEvents.find(e => e.id === eventId);
+    if (!event) return;
+
+    const newHidden = !event.hidden;
+    try {
+        const { error } = await supabaseClient
+            .from('poly_events')
+            .update({ hidden: newHidden })
+            .eq('id', eventId);
+
+        if (error) throw error;
+
+        event.hidden = newHidden;
+        renderCalendar();
+        v2ShowToast(newHidden ? '숨김 처리됨' : '노출됨', 'success');
+        v2LoadStats();
+
+        // 캐시 무효화 (로컬 + 서버)
+        localStorage.removeItem('polymarket_events_cache');
+        localStorage.removeItem('polymarket_cache_time');
+        bumpCacheVersion();
+    } catch (err) {
+        v2ShowToast('오류: ' + err.message, 'error');
+    }
+}
+
+// 서버 캐시 버전 갱신 (다른 유저의 캐시 무효화)
+async function bumpCacheVersion() {
+    try {
+        await supabaseClient
+            .from('cache_meta')
+            .update({ last_updated: new Date().toISOString() })
+            .eq('id', 1);
+    } catch (e) {
+        console.warn('cache_meta 업데이트 실패:', e);
+    }
+}
+
+function v2ShowToast(message, type = 'success') {
+    const toast = document.getElementById('v2Toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.className = `v2-toast ${type} show`;
+    setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// 전역 노출
+window.v2OpenEditModal = v2OpenEditModal;
+window.v2ToggleHidden = v2ToggleHidden;
