@@ -332,13 +332,18 @@ class Translator:
         print(f"  캐시 적중  : {len(cache):,}개")
         return cache
 
-    def _bulk_upsert(self, events: List[Dict], title_map: Dict[str, str]) -> int:
+    def _bulk_update(self, events: List[Dict], title_map: Dict[str, str]) -> int:
         """title_map을 기반으로 전체 이벤트에 title_ko를 벌크 upsert"""
         upsert_data = []
         for event in events:
             title_ko = title_map.get(event['title'])
             if title_ko:
-                upsert_data.append({'id': event['id'], 'title_ko': title_ko})
+                # title 포함해야 NOT NULL 제약조건 통과
+                upsert_data.append({
+                    'id': event['id'],
+                    'title': event['title'],
+                    'title_ko': title_ko
+                })
 
         if not upsert_data:
             return 0
@@ -517,7 +522,7 @@ class Translator:
             events_to_update = all_events
 
         print(f"\n  [DB 저장 단계]")
-        self.total_translated = self._bulk_upsert(events_to_update, title_map)
+        self.total_translated = self._bulk_update(events_to_update, title_map)
 
         # 9. 결과 출력
         elapsed = time.time() - start_time

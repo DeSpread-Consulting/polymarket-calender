@@ -664,27 +664,13 @@ async function loadData() {
         upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21); // Week View 5일 + Upcoming 3주
         const maxDate = upcomingWeeks.toISOString();
 
-        // 🚀 병렬 fetch: 먼저 총 건수 파악 후 동시 요청
-        const { count, error: countError } = await supabaseClient
-            .from('poly_events')
-            .select('id', { count: 'exact', head: true })
-            .gte('end_date', now)
-            .lte('end_date', maxDate)
-            .gte('volume', 1000)
-            .eq('hidden', false);
+        // 🚀 병렬 fetch: 2개씩 동시 요청 (Supabase 타임아웃 방지)
+        const CONCURRENT = 2;
+        let allData = [];
+        let offset = 0;
+        let hasMore = true;
 
-        if (countError) throw countError;
-
-        const totalCount = count || 0;
-        console.log(`📊 총 ${totalCount}건 확인, 병렬 로드 시작...`);
-
-        // offset 목록 생성 후 Promise.all로 동시 요청
-        const offsets = [];
-        for (let i = 0; i < totalCount; i += PAGE_SIZE) {
-            offsets.push(i);
-        }
-
-        const fetchPage = (offset) => supabaseClient
+        const fetchPage = (off) => supabaseClient
             .from('poly_events')
             .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
             .gte('end_date', now)
@@ -692,18 +678,30 @@ async function loadData() {
             .gte('volume', 1000)
             .eq('hidden', false)
             .order('end_date', { ascending: true })
-            .range(offset, offset + PAGE_SIZE - 1);
+            .range(off, off + PAGE_SIZE - 1);
 
-        const results = await Promise.all(offsets.map(fetchPage));
+        while (hasMore) {
+            // 2페이지씩 동시 요청
+            const batch = [];
+            for (let i = 0; i < CONCURRENT; i++) {
+                batch.push(fetchPage(offset + i * PAGE_SIZE));
+            }
 
-        let allData = [];
-        for (const result of results) {
-            if (result.error) throw result.error;
-            if (result.data) allData = allData.concat(result.data);
+            const results = await Promise.all(batch);
+            let batchCount = 0;
+
+            for (const result of results) {
+                if (result.error) throw result.error;
+                if (result.data && result.data.length > 0) {
+                    allData = allData.concat(result.data);
+                    batchCount += result.data.length;
+                }
+            }
+
+            console.log(`📦 ${allData.length}건 로드됨...`);
+            offset += CONCURRENT * PAGE_SIZE;
+            hasMore = batchCount >= CONCURRENT * PAGE_SIZE;
         }
-
-        // 병렬 응답 합산 후 정렬 보장
-        allData.sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
 
         console.log('✅ 데이터 로드 성공:', allData.length, '건');
         allEvents = allData;
