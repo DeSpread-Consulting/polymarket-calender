@@ -126,6 +126,12 @@ const categoryColors = {
     'default': '#6b7280'      // Gray
 };
 
+// Known image hosts (observed from existing data); not strictly enforced
+const IMAGE_HOST_ALLOWLIST = new Set([
+    'polymarket-upload.s3.us-east-2.amazonaws.com',
+    'cdn.pandascore.co'
+]);
+
 // Tooltip element
 let tooltipElement = null;
 let tooltipTimeout = null;
@@ -1249,7 +1255,7 @@ function renderWeekEventCard(container, event) {
         <div class="week-event-time ${timeClass}">${time}</div>
         <div class="week-event-content">
             <div class="week-event-header">
-                <img src="${imageUrl}" class="week-event-image" alt="" onerror="this.style.display='none'">
+                <img class="week-event-image" alt="">
                 <span class="week-event-title">${escapeHtml(getTitle(event))}</span>
                 <button class="event-link-btn" data-polymarket-slug="${slugSafe}" title="Open in Polymarket">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1265,6 +1271,9 @@ function renderWeekEventCard(container, event) {
             </div>
         </div>
     `;
+
+    const eventImg = eventEl.querySelector('.week-event-image');
+    if (eventImg) applySafeImage(eventImg, imageUrl);
 
     // 이벤트 위임: Polymarket 링크 버튼
     const linkBtn = eventEl.querySelector('.event-link-btn[data-polymarket-slug]');
@@ -1414,10 +1423,13 @@ function renderOverviewEventItem(container, event) {
 
     eventEl.innerHTML = `
         ${adminHtml}
-        <img src="${imageUrl}" class="overview-event-image" alt="" onerror="this.style.display='none'">
+        <img class="overview-event-image" alt="">
         <span class="overview-event-title">${escapeHtml(title)}</span>
         <span class="overview-event-prob ${probClass}">${prob}%</span>
     `;
+
+    const eventImg = eventEl.querySelector('.overview-event-image');
+    if (eventImg) applySafeImage(eventImg, imageUrl);
 
     // 이벤트 위임: Admin 컨트롤
     eventEl.querySelectorAll('[data-admin-action]').forEach(btn => {
@@ -1446,6 +1458,33 @@ function getMainProb(event) {
 function truncate(str, length) {
     if (!str) return '';
     return str.length > length ? str.substring(0, length) + '...' : str;
+}
+
+function sanitizeImageUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:') return '';
+        if (!IMAGE_HOST_ALLOWLIST.has(parsed.host)) {
+            console.warn('[image] Unknown host:', parsed.host);
+        }
+        return parsed.toString();
+    } catch (e) {
+        return '';
+    }
+}
+
+function applySafeImage(imgEl, url) {
+    if (!imgEl) return;
+    const safeUrl = sanitizeImageUrl(url);
+    if (!safeUrl) {
+        imgEl.style.display = 'none';
+        return;
+    }
+    imgEl.src = safeUrl;
+    imgEl.addEventListener('error', () => {
+        imgEl.style.display = 'none';
+    }, { once: true });
 }
 
 function escapeHtml(str) {
@@ -1640,13 +1679,15 @@ function renderModalEventItem(container, event) {
         eventEl.onclick = () => openEventLink(slugSafe, '', eventSlugSafe);
     }
     eventEl.innerHTML = `
-        <img src="${imageUrl}" class="modal-event-image" alt="" onerror="this.style.display='none'">
+        <img class="modal-event-image" alt="">
         <div class="modal-event-content">
             <div class="modal-event-title">${escapeHtml(getTitle(event))}</div>
             <div class="modal-event-category">${escapeHtml(event.category || 'Uncategorized')}</div>
         </div>
         <span class="modal-event-prob ${probClass}">${prob}%</span>
     `;
+    const eventImg = eventEl.querySelector('.modal-event-image');
+    if (eventImg) applySafeImage(eventImg, imageUrl);
     container.appendChild(eventEl);
 }
 
