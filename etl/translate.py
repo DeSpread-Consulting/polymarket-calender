@@ -20,12 +20,13 @@ Polymarket 시장 제목 한글 번역 (통합 스크립트)
 """
 
 import os
+import re
 import sys
 import time
 import queue
 import threading
 import argparse
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,6 +44,120 @@ TRANSLATE_BATCH_SIZE = 100   # OpenAI API 배치 크기
 UPSERT_BATCH_SIZE = 500      # DB upsert 배치 크기
 CACHE_QUERY_SIZE = 200       # 캐시 조회 청크 크기
 MAX_RETRIES = 3
+
+
+# ============================================================
+# 템플릿 번역 (API 불필요 - 패턴 기반 즉시 번역)
+# ============================================================
+
+COIN_NAME_MAP = {
+    'Bitcoin': '비트코인',
+    'Ethereum': '이더리움',
+    'Solana': '솔라나',
+    'XRP': 'XRP',
+    'Dogecoin': '도지코인',
+    'DOGE': '도지코인',
+    'BNB': 'BNB',
+    'Cardano': '카르다노',
+    'Avalanche': '아발란체',
+    'Polkadot': '폴카닷',
+    'Chainlink': '체인링크',
+    'Litecoin': '라이트코인',
+    'SUI': 'SUI',
+    'SOL': 'SOL',
+}
+
+MONTH_MAP = {
+    'January': '1월', 'February': '2월', 'March': '3월',
+    'April': '4월', 'May': '5월', 'June': '6월',
+    'July': '7월', 'August': '8월', 'September': '9월',
+    'October': '10월', 'November': '11월', 'December': '12월',
+}
+
+# "Up or Down" 패턴 정규식
+# 예: "Bitcoin Up or Down - February 24, 12AM ET"
+# 예: "Bitcoin Up or Down - February 24, 1:30AM-1:45AM ET"
+_UP_DOWN_PATTERN = re.compile(
+    r'^(.+?)\s+Up or Down\s*-\s*'          # 코인명
+    r'(\w+)\s+(\d{1,2}),\s*'               # 월 일
+    r'(.+?)\s+ET$'                          # 시간 부분 + ET
+)
+
+# 단일 시간: "12AM", "1PM", "10AM"
+_SINGLE_TIME = re.compile(r'^(\d{1,2})(AM|PM)$')
+
+# 분 포함 단일 시간: "1:30AM"
+_SINGLE_TIME_MIN = re.compile(r'^(\d{1,2}):(\d{2})(AM|PM)$')
+
+# 시간 범위: "12:00AM-12:05AM", "1:30PM-1:45PM"
+_TIME_RANGE = re.compile(r'^(\d{1,2}):(\d{2})(AM|PM)-(\d{1,2}):(\d{2})(AM|PM)$')
+
+# 단순 시간 범위: "1AM-2AM"
+_SIMPLE_RANGE = re.compile(r'^(\d{1,2})(AM|PM)-(\d{1,2})(AM|PM)$')
+
+
+def _convert_ampm(hour_str: str, ampm: str) -> str:
+    """AM/PM을 오전/오후로 변환"""
+    hour = int(hour_str)
+    prefix = '오전' if ampm == 'AM' else '오후'
+    return f'{prefix} {hour}시'
+
+
+def _convert_time_part(time_str: str) -> Optional[str]:
+    """시간 문자열을 한글로 변환"""
+    time_str = time_str.strip()
+
+    # 단일 시간: "12AM" → "오전 12시"
+    m = _SINGLE_TIME.match(time_str)
+    if m:
+        return _convert_ampm(m.group(1), m.group(2))
+
+    # 분 포함 단일: "1:30AM" → "오전 1:30"
+    m = _SINGLE_TIME_MIN.match(time_str)
+    if m:
+        prefix = '오전' if m.group(3) == 'AM' else '오후'
+        return f'{prefix} {m.group(1)}:{m.group(2)}'
+
+    # 시간 범위: "12:00AM-12:05AM" → "오전 12:00~12:05"
+    m = _TIME_RANGE.match(time_str)
+    if m:
+        prefix = '오전' if m.group(3) == 'AM' else '오후'
+        return f'{prefix} {m.group(1)}:{m.group(2)}~{m.group(4)}:{m.group(5)}'
+
+    # 단순 범위: "1AM-2AM" → "오전 1시~2시"
+    m = _SIMPLE_RANGE.match(time_str)
+    if m:
+        prefix = '오전' if m.group(2) == 'AM' else '오후'
+        return f'{prefix} {m.group(1)}시~{m.group(3)}시'
+
+    return None
+
+
+def template_translate(title: str) -> Optional[str]:
+    """패턴 기반 즉시 번역. 매칭 안 되면 None 반환."""
+    m = _UP_DOWN_PATTERN.match(title)
+    if not m:
+        return None
+
+    coin_en = m.group(1).strip()
+    month_en = m.group(2)
+    day = m.group(3)
+    time_part = m.group(4).strip()
+
+    # 코인명 변환
+    coin_ko = COIN_NAME_MAP.get(coin_en, coin_en)
+
+    # 월 변환
+    month_ko = MONTH_MAP.get(month_en)
+    if not month_ko:
+        return None
+
+    # 시간 변환
+    time_ko = _convert_time_part(time_part)
+    if not time_ko:
+        return None
+
+    return f'{coin_ko} - {month_ko} {day}일, {time_ko} ET에 오를까 내릴까?'
 
 
 def load_translation_prompt() -> str:
@@ -337,10 +452,22 @@ class Translator:
             cache = self._preload_cache(unique_titles)
             self.cache_hits = len(cache)
 
-        # 4. 번역 필요한 제목만 필터
-        titles_to_translate = [t for t in unique_titles if t not in cache]
+        # 4. 템플릿 번역 (API 불필요 - 패턴 매칭으로 즉시 처리)
+        remaining = [t for t in unique_titles if t not in cache]
+        template_map = {}
+        for title in remaining:
+            result = template_translate(title)
+            if result:
+                template_map[title] = result
 
-        # 5. 번역 배치 분할
+        template_count = len(template_map)
+        if template_count > 0:
+            print(f"  템플릿 번역 : {template_count:,}개 (API 미사용)")
+
+        # 5. API 번역 필요한 제목만 필터
+        titles_to_translate = [t for t in remaining if t not in template_map]
+
+        # 6. 번역 배치 분할
         translate_batches = [
             titles_to_translate[i:i + TRANSLATE_BATCH_SIZE]
             for i in range(0, len(titles_to_translate), TRANSLATE_BATCH_SIZE)
@@ -355,7 +482,9 @@ class Translator:
         print(f"  고유 제목   : {len(unique_titles):,}개 (중복 {dedup_saved:,}개 제거)")
         if not self.overwrite:
             print(f"  캐시 적중   : {len(cache):,}개")
-        print(f"  번역 필요   : {len(titles_to_translate):,}개")
+        if template_count > 0:
+            print(f"  템플릿 번역 : {template_count:,}개 (무료)")
+        print(f"  API 번역    : {len(titles_to_translate):,}개")
         print(f"  번역 배치   : {total_translate_batches}개")
         if total_translate_batches > 0:
             print(f"  예상 시간   : ~{(total_translate_batches * 1.5 / self.workers / 60):.1f}분")
@@ -363,8 +492,9 @@ class Translator:
 
         start_time = time.time()
 
-        # 6. 병렬 번역 (unique title 기준)
+        # 7. 병렬 번역 (unique title 기준)
         title_map = dict(cache)  # 캐시 결과를 먼저 포함
+        title_map.update(template_map)  # 템플릿 번역 결과 포함
 
         if translate_batches:
             print("  [번역 단계]")
@@ -379,7 +509,7 @@ class Translator:
                     batch_result = future.result()
                     title_map.update(batch_result)
 
-        # 7. 벌크 DB 업데이트 (max_batches 적용 시 번역된 제목만 필터)
+        # 8. 벌크 DB 업데이트 (max_batches 적용 시 번역된 제목만 필터)
         if max_batches:
             translated_titles = set(title_map.keys())
             events_to_update = [e for e in all_events if e['title'] in translated_titles]
@@ -389,7 +519,7 @@ class Translator:
         print(f"\n  [DB 저장 단계]")
         self.total_translated = self._bulk_upsert(events_to_update, title_map)
 
-        # 8. 결과 출력
+        # 9. 결과 출력
         elapsed = time.time() - start_time
         print(f"\n{'='*55}")
         print(f"  번역 완료!")
@@ -397,6 +527,8 @@ class Translator:
         print(f"  고유 번역       : {len(title_map):,}개")
         if self.cache_hits > 0:
             print(f"  캐시 재사용     : {self.cache_hits:,}개")
+        if template_count > 0:
+            print(f"  템플릿 번역     : {template_count:,}개 (무료)")
         if dedup_saved > 0:
             print(f"  중복 절감       : {dedup_saved:,}개 (API 호출 절약)")
         print(f"  실패 배치       : {self.failed_batches}개")
