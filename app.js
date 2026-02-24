@@ -654,78 +654,90 @@ async function loadData() {
         console.log('⚠️ 캐시 로드 실패, 새로 로드');
     }
 
-    try {
-        const PAGE_SIZE = 1000;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAYS = [1000, 2000, 4000]; // 1초, 2초, 4초 대기
 
-        const now = new Date().toISOString();
-
-        // 🚀 개선 1: Week View (5일) + Upcoming (3주) 전체 로드
-        const upcomingWeeks = new Date();
-        upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21); // Week View 5일 + Upcoming 3주
-        const maxDate = upcomingWeeks.toISOString();
-
-        // 🚀 병렬 fetch: 2개씩 동시 요청 (Supabase 타임아웃 방지)
-        const CONCURRENT = 2;
-        let allData = [];
-        let offset = 0;
-        let hasMore = true;
-
-        const fetchPage = (off) => supabaseClient
-            .from('poly_events')
-            .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
-            .gte('end_date', now)
-            .lte('end_date', maxDate)
-            .gte('volume', 1000)
-            .eq('hidden', false)
-            .order('end_date', { ascending: true })
-            .range(off, off + PAGE_SIZE - 1);
-
-        while (hasMore) {
-            // 2페이지씩 동시 요청
-            const batch = [];
-            for (let i = 0; i < CONCURRENT; i++) {
-                batch.push(fetchPage(offset + i * PAGE_SIZE));
-            }
-
-            const results = await Promise.all(batch);
-            let batchCount = 0;
-
-            for (const result of results) {
-                if (result.error) throw result.error;
-                if (result.data && result.data.length > 0) {
-                    allData = allData.concat(result.data);
-                    batchCount += result.data.length;
-                }
-            }
-
-            console.log(`📦 ${allData.length}건 로드됨...`);
-            offset += CONCURRENT * PAGE_SIZE;
-            hasMore = batchCount >= CONCURRENT * PAGE_SIZE;
-        }
-
-        console.log('✅ 데이터 로드 성공:', allData.length, '건');
-        allEvents = allData;
-
-        // 🎯 그룹화 적용 (캐시 저장 전)
-        allEvents = groupSimilarMarkets(allEvents);
-
-        // 🚀 개선 3: 캐시에 저장
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-            localStorage.setItem(cacheKey, JSON.stringify(allEvents));
-            localStorage.setItem(cacheTimeKey, Date.now().toString());
-            console.log('💾 캐시에 저장 완료');
-        } catch (e) {
-            console.warn('⚠️ 캐시 저장 실패 (용량 초과 가능성):', e);
-        }
+            const PAGE_SIZE = 1000;
 
-        extractTags();
-        extractCategories();
-    } catch (error) {
-        console.error('❌ 데이터 로드 실패:', error);
-        allEvents = generateDemoData();
-        // 🎯 그룹화 적용
-        allEvents = groupSimilarMarkets(allEvents);
-        extractTags();
+            const now = new Date().toISOString();
+
+            // 🚀 개선 1: Week View (5일) + Upcoming (3주) 전체 로드
+            const upcomingWeeks = new Date();
+            upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21); // Week View 5일 + Upcoming 3주
+            const maxDate = upcomingWeeks.toISOString();
+
+            // 🚀 병렬 fetch: 2개씩 동시 요청 (Supabase 타임아웃 방지)
+            const CONCURRENT = 2;
+            let allData = [];
+            let offset = 0;
+            let hasMore = true;
+
+            const fetchPage = (off) => supabaseClient
+                .from('poly_events')
+                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
+                .gte('end_date', now)
+                .lte('end_date', maxDate)
+                .gte('volume', 1000)
+                .eq('hidden', false)
+                .order('end_date', { ascending: true })
+                .range(off, off + PAGE_SIZE - 1);
+
+            while (hasMore) {
+                // 2페이지씩 동시 요청
+                const batch = [];
+                for (let i = 0; i < CONCURRENT; i++) {
+                    batch.push(fetchPage(offset + i * PAGE_SIZE));
+                }
+
+                const results = await Promise.all(batch);
+                let batchCount = 0;
+
+                for (const result of results) {
+                    if (result.error) throw result.error;
+                    if (result.data && result.data.length > 0) {
+                        allData = allData.concat(result.data);
+                        batchCount += result.data.length;
+                    }
+                }
+
+                console.log(`📦 ${allData.length}건 로드됨...`);
+                offset += CONCURRENT * PAGE_SIZE;
+                hasMore = batchCount >= CONCURRENT * PAGE_SIZE;
+            }
+
+            console.log('✅ 데이터 로드 성공:', allData.length, '건');
+            allEvents = allData;
+
+            // 🎯 그룹화 적용 (캐시 저장 전)
+            allEvents = groupSimilarMarkets(allEvents);
+
+            // 🚀 개선 3: 캐시에 저장
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify(allEvents));
+                localStorage.setItem(cacheTimeKey, Date.now().toString());
+                console.log('💾 캐시에 저장 완료');
+            } catch (e) {
+                console.warn('⚠️ 캐시 저장 실패 (용량 초과 가능성):', e);
+            }
+
+            extractTags();
+            extractCategories();
+            return; // 성공 시 함수 종료
+        } catch (error) {
+            if (attempt < MAX_RETRIES) {
+                const delay = RETRY_DELAYS[attempt];
+                console.warn(`⚠️ 데이터 로드 실패 (${attempt + 1}/${MAX_RETRIES}), ${delay / 1000}초 후 재시도...`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.error('❌ 데이터 로드 최종 실패 (재시도 모두 소진):', error);
+                allEvents = generateDemoData();
+                // 🎯 그룹화 적용
+                allEvents = groupSimilarMarkets(allEvents);
+                extractTags();
+            }
+        }
     }
 }
 
@@ -784,55 +796,67 @@ async function loadMoreData(targetDate) {
     isLoadingMore = true;
     console.log('📥 추가 데이터 로딩 중...');
 
-    try {
-        const lastEvent = allEvents[allEvents.length - 1];
-        const startDate = lastEvent ? lastEvent.end_date : new Date().toISOString();
+    const MAX_RETRIES = 3;
+    const RETRY_DELAYS = [1000, 2000, 4000];
 
-        let query = supabaseClient
-            .from('poly_events')
-            .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden, description, description_ko')
-            .gte('end_date', startDate)
-            .lte('end_date', targetDate)
-            .gte('volume', 1000)  // $1K 이상 (암호화폐 포함)
-            .order('end_date', { ascending: true })
-            .limit(1000);
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const lastEvent = allEvents[allEvents.length - 1];
+            const startDate = lastEvent ? lastEvent.end_date : new Date().toISOString();
 
-        // admin 모드가 아닐 때만 hidden 필터 적용
-        if (!isAdminMode) {
-            query = query.eq('hidden', false);
-        }
+            let query = supabaseClient
+                .from('poly_events')
+                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden, description, description_ko')
+                .gte('end_date', startDate)
+                .lte('end_date', targetDate)
+                .gte('volume', 1000)  // $1K 이상 (암호화폐 포함)
+                .order('end_date', { ascending: true })
+                .limit(1000);
 
-        const { data, error } = await query;
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-            // 중복 제거
-            const existingIds = new Set(allEvents.map(e => e.id));
-            const newEvents = data.filter(e => !existingIds.has(e.id));
-
-            allEvents = allEvents.concat(newEvents);
-            console.log('✅ 추가 로드:', newEvents.length, '건');
-
-            // 🎯 전체 데이터 재그룹화 (새 이벤트가 기존 그룹에 속할 수 있음)
-            allEvents = groupSimilarMarkets(allEvents);
-
-            // 캐시 업데이트
-            try {
-                localStorage.setItem('polymarket_events_cache', JSON.stringify(allEvents));
-                localStorage.setItem('polymarket_cache_time', Date.now().toString());
-            } catch (e) {
-                console.warn('⚠️ 캐시 업데이트 실패');
+            // admin 모드가 아닐 때만 hidden 필터 적용
+            if (!isAdminMode) {
+                query = query.eq('hidden', false);
             }
 
-            extractTags();
-            extractCategories();
+            const { data, error } = await query;
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                // 중복 제거
+                const existingIds = new Set(allEvents.map(e => e.id));
+                const newEvents = data.filter(e => !existingIds.has(e.id));
+
+                allEvents = allEvents.concat(newEvents);
+                console.log('✅ 추가 로드:', newEvents.length, '건');
+
+                // 🎯 전체 데이터 재그룹화 (새 이벤트가 기존 그룹에 속할 수 있음)
+                allEvents = groupSimilarMarkets(allEvents);
+
+                // 캐시 업데이트
+                try {
+                    localStorage.setItem('polymarket_events_cache', JSON.stringify(allEvents));
+                    localStorage.setItem('polymarket_cache_time', Date.now().toString());
+                } catch (e) {
+                    console.warn('⚠️ 캐시 업데이트 실패');
+                }
+
+                extractTags();
+                extractCategories();
+            }
+            break; // 성공 시 루프 종료
+        } catch (error) {
+            if (attempt < MAX_RETRIES) {
+                const delay = RETRY_DELAYS[attempt];
+                console.warn(`⚠️ 추가 데이터 로드 실패 (${attempt + 1}/${MAX_RETRIES}), ${delay / 1000}초 후 재시도...`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.error('❌ 추가 데이터 로드 최종 실패:', error);
+            }
         }
-    } catch (error) {
-        console.error('❌ 추가 데이터 로드 실패:', error);
-    } finally {
-        isLoadingMore = false;
     }
+
+    isLoadingMore = false;
 }
 
 function generateDemoData() {
