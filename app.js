@@ -655,10 +655,7 @@ async function loadData() {
     }
 
     try {
-        const PAGE_SIZE = 1000; // 페이지 크기 증가 (요청 횟수 감소)
-        let allData = [];
-        let offset = 0;
-        let hasMore = true;
+        const PAGE_SIZE = 1000;
 
         const now = new Date().toISOString();
 
@@ -667,29 +664,46 @@ async function loadData() {
         upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21); // Week View 5일 + Upcoming 3주
         const maxDate = upcomingWeeks.toISOString();
 
-        while (hasMore) {
-            const { data, error } = await supabaseClient
-                .from('poly_events')
-                // 🚀 개선 2: 필요한 필드만 선택 (전송량 60% 감소)
-                .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
-                .gte('end_date', now)  // 현재 이후
-                .lte('end_date', maxDate)  // 5일 이내
-                .gte('volume', 1000)  // 서버 레벨 필터링 (거래량 $1K 이상, 암호화폐 포함)
-                .eq('hidden', false)  // 숨김 처리된 시장 제외
-                .order('end_date', { ascending: true })
-                .range(offset, offset + PAGE_SIZE - 1);
+        // 🚀 병렬 fetch: 먼저 총 건수 파악 후 동시 요청
+        const { count, error: countError } = await supabaseClient
+            .from('poly_events')
+            .select('id', { count: 'exact', head: true })
+            .gte('end_date', now)
+            .lte('end_date', maxDate)
+            .gte('volume', 1000)
+            .eq('hidden', false);
 
-            if (error) throw error;
+        if (countError) throw countError;
 
-            if (data && data.length > 0) {
-                allData = allData.concat(data);
-                console.log(`📦 ${allData.length}건 로드됨...`);
-                offset += PAGE_SIZE;
-                hasMore = data.length === PAGE_SIZE;
-            } else {
-                hasMore = false;
-            }
+        const totalCount = count || 0;
+        console.log(`📊 총 ${totalCount}건 확인, 병렬 로드 시작...`);
+
+        // offset 목록 생성 후 Promise.all로 동시 요청
+        const offsets = [];
+        for (let i = 0; i < totalCount; i += PAGE_SIZE) {
+            offsets.push(i);
         }
+
+        const fetchPage = (offset) => supabaseClient
+            .from('poly_events')
+            .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
+            .gte('end_date', now)
+            .lte('end_date', maxDate)
+            .gte('volume', 1000)
+            .eq('hidden', false)
+            .order('end_date', { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1);
+
+        const results = await Promise.all(offsets.map(fetchPage));
+
+        let allData = [];
+        for (const result of results) {
+            if (result.error) throw result.error;
+            if (result.data) allData = allData.concat(result.data);
+        }
+
+        // 병렬 응답 합산 후 정렬 보장
+        allData.sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
 
         console.log('✅ 데이터 로드 성공:', allData.length, '건');
         allEvents = allData;

@@ -22,6 +22,7 @@ Polymarket 시장 제목 한글 번역 (통합 스크립트)
 import os
 import sys
 import time
+import queue
 import threading
 import argparse
 from typing import List, Dict
@@ -38,7 +39,9 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # 설정값
-BATCH_SIZE = 100
+TRANSLATE_BATCH_SIZE = 100   # OpenAI API 배치 크기
+UPSERT_BATCH_SIZE = 500      # DB upsert 배치 크기
+CACHE_QUERY_SIZE = 200       # 캐시 조회 청크 크기
 MAX_RETRIES = 3
 
 
@@ -60,15 +63,6 @@ def load_translation_prompt() -> str:
 
 
 TRANSLATION_PROMPT = load_translation_prompt()
-
-SYSTEM_MESSAGE = """당신은 전문 번역가입니다.
-
-중요 규칙:
-1. 반드시 반말로 번역 (~할까, ~될까, ~인가)
-2. 절대 존댓말 사용 금지 (~할까요, ~될까요 ❌)
-3. 시간대 표기 필수: ET, PT 등은 반드시 유지 (4AM ET → 오전 4시 ET ✅)
-4. "have"를 "가지다"로 직역 금지. 문맥에 맞게 "차지할까/선보일까/기록할까" 사용
-5. 모든 제목에서 일관성 유지"""
 
 
 def calculate_date_range(months: int, from_date: str = None, to_date: str = None):
@@ -111,20 +105,43 @@ class Translator:
         self.start_date = start_date
         self.end_date = end_date
 
+        # Supabase 클라이언트 풀 (워커용)
+        self.client_pool = queue.Queue()
+        for _ in range(workers):
+            self.client_pool.put(create_client(self.supabase_url, self.supabase_key))
+
+        # system 메시지에 TRANSLATION_PROMPT 통합 (토큰 비용 절감)
+        self.system_message = f"""{TRANSLATION_PROMPT}
+
+---
+추가 규칙:
+1. 반드시 반말로 번역 (~할까, ~될까, ~인가)
+2. 절대 존댓말 사용 금지 (~할까요, ~될까요 ❌)
+3. 시간대 표기 필수: ET, PT 등은 반드시 유지 (4AM ET → 오전 4시 ET ✅)
+4. "have"를 "가지다"로 직역 금지. 문맥에 맞게 "차지할까/선보일까/기록할까" 사용
+5. 모든 제목에서 일관성 유지"""
+
         # 통계 (Thread-safe)
         self.lock = threading.Lock()
         self.total_translated = 0
-        self.total_batches = 0
+        self.total_api_calls = 0
         self.failed_batches = 0
         self.cache_hits = 0
 
-    def translate_batch(self, titles: List[str]) -> List[str]:
-        """OpenAI API로 배치 번역"""
+    def _get_client(self) -> Client:
+        """풀에서 Supabase 클라이언트 가져오기"""
+        return self.client_pool.get()
+
+    def _return_client(self, client: Client):
+        """풀에 Supabase 클라이언트 반환"""
+        self.client_pool.put(client)
+
+    def translate_batch(self, titles: List[str]) -> Dict[str, str]:
+        """OpenAI API로 배치 번역, title→title_ko 매핑 반환"""
         if not titles:
-            return []
+            return {}
 
         titles_text = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
-        request_text = f"{TRANSLATION_PROMPT}\n\n번역할 제목들:\n{titles_text}"
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -133,8 +150,8 @@ class Translator:
                     max_tokens=5000,
                     temperature=0.3,
                     messages=[
-                        {"role": "system", "content": SYSTEM_MESSAGE},
-                        {"role": "user", "content": request_text}
+                        {"role": "system", "content": self.system_message},
+                        {"role": "user", "content": f"번역할 제목들:\n{titles_text}"}
                     ]
                 )
 
@@ -154,17 +171,17 @@ class Translator:
                         except (ValueError, IndexError):
                             continue
 
-                # 후처리 파이프라인 적용
-                results = []
-                for i in range(len(titles)):
-                    translation = translations_dict.get(i + 1, titles[i])
-                    translation = postprocess_translation(titles[i], translation)
-                    results.append(translation)
+                # 후처리 + title→title_ko 매핑 생성
+                result = {}
+                for i, title in enumerate(titles):
+                    translation = translations_dict.get(i + 1, title)
+                    translation = postprocess_translation(title, translation)
+                    result[title] = translation
 
-                if len(results) != len(titles):
-                    print(f"  ⚠️  번역 개수 불일치: {len(results)} != {len(titles)}")
+                if len(result) != len(titles):
+                    print(f"  ⚠️  번역 개수 불일치: {len(result)} != {len(titles)}")
 
-                return results
+                return result
 
             except Exception as e:
                 if attempt < MAX_RETRIES - 1:
@@ -172,47 +189,89 @@ class Translator:
                     time.sleep(2 ** attempt)
                 else:
                     print(f"  ❌ API 호출 실패: {e}")
-                    return []
+                    return {}
 
-        return []
+        return {}
 
-    def _lookup_cache(self, client: Client, titles: List[str]) -> Dict[str, str]:
-        """DB에서 기존 번역 캐시 조회"""
+    def _preload_cache(self, titles: List[str]) -> Dict[str, str]:
+        """전체 대상 title에 대해 기존 번역 캐시를 한번에 조회"""
         cache = {}
         unique_titles = list(set(titles))
 
-        for i in range(0, len(unique_titles), 50):
-            chunk = unique_titles[i:i + 50]
-            response = client.table('poly_events') \
-                .select('title, title_ko') \
-                .in_('title', chunk) \
-                .not_.is_('title_ko', 'null') \
-                .order('end_date', desc=True) \
-                .execute()
-            for row in response.data:
-                if row['title'] not in cache:
-                    cache[row['title']] = row['title_ko']
+        print(f"  캐시 조회 중... ({len(unique_titles):,}개 고유 제목)")
 
+        for i in range(0, len(unique_titles), CACHE_QUERY_SIZE):
+            chunk = unique_titles[i:i + CACHE_QUERY_SIZE]
+            try:
+                response = self.supabase.table('poly_events') \
+                    .select('title, title_ko') \
+                    .in_('title', chunk) \
+                    .not_.is_('title_ko', 'null') \
+                    .execute()
+                for row in response.data:
+                    if row['title'] not in cache:
+                        cache[row['title']] = row['title_ko']
+            except Exception as e:
+                print(f"  ⚠️  캐시 조회 실패 (청크 {i//CACHE_QUERY_SIZE + 1}): {e}")
+
+        print(f"  캐시 적중  : {len(cache):,}개")
         return cache
 
-    def _update_with_retry(self, client: Client, ids: List[str], translations: List[str]) -> int:
-        """DB 업데이트 (재시도 포함)"""
+    def _bulk_upsert(self, events: List[Dict], title_map: Dict[str, str]) -> int:
+        """title_map을 기반으로 전체 이벤트에 title_ko를 벌크 upsert"""
+        upsert_data = []
+        for event in events:
+            title_ko = title_map.get(event['title'])
+            if title_ko:
+                upsert_data.append({'id': event['id'], 'title_ko': title_ko})
+
+        if not upsert_data:
+            return 0
+
         success = 0
-        for eid, trans in zip(ids, translations):
+        total_chunks = (len(upsert_data) + UPSERT_BATCH_SIZE - 1) // UPSERT_BATCH_SIZE
+
+        for i in range(0, len(upsert_data), UPSERT_BATCH_SIZE):
+            chunk = upsert_data[i:i + UPSERT_BATCH_SIZE]
+            chunk_num = i // UPSERT_BATCH_SIZE + 1
+
             for attempt in range(MAX_RETRIES):
                 try:
-                    client.table('poly_events') \
-                        .update({'title_ko': trans}) \
-                        .eq('id', eid) \
+                    result = self.supabase.table('poly_events') \
+                        .upsert(chunk, on_conflict='id') \
                         .execute()
-                    success += 1
+                    success += len(result.data)
+                    print(f"  💾 DB 저장 {chunk_num}/{total_chunks} | {len(result.data)}개")
                     break
                 except Exception as e:
                     if attempt < MAX_RETRIES - 1:
-                        time.sleep(0.5 * (attempt + 1))
+                        time.sleep(1 * (attempt + 1))
                     else:
-                        print(f"  ❌ 업데이트 실패 (ID: {eid[:8]}...): {e}")
+                        print(f"  ❌ DB 저장 실패 (청크 {chunk_num}): {e}")
+
         return success
+
+    def _translate_batch_worker(self, batch_num: int, titles: List[str],
+                                total_batches: int) -> Dict[str, str]:
+        """워커 스레드에서 배치 번역 실행"""
+        try:
+            result = self.translate_batch(titles)
+
+            with self.lock:
+                self.total_api_calls += 1
+                translated_count = len(result)
+
+            progress = (self.total_api_calls / total_batches) * 100
+            print(f"  🔤 번역 {batch_num:3d}/{total_batches} | "
+                  f"{translated_count:3d}개 완료 ({progress:.1f}%)")
+
+            return result
+
+        except Exception as e:
+            with self.lock:
+                self.failed_batches += 1
+            print(f"  ❌ 번역 배치 {batch_num} 실패: {e}")
+            return {}
 
     def fetch_all_target_ids(self) -> List[Dict]:
         """번역 대상 이벤트의 id, title을 한번에 모두 조회"""
@@ -245,64 +304,6 @@ class Translator:
 
         return all_events
 
-    def process_batch(self, batch_num: int, batch_events: List[Dict], total_batches: int) -> Dict:
-        """단일 배치 처리 (워커 스레드) - ID 기반"""
-        worker_supabase = create_client(self.supabase_url, self.supabase_key)
-
-        try:
-            if not batch_events:
-                return {'success': False, 'reason': 'empty'}
-
-            batch_titles = [e['title'] for e in batch_events]
-            batch_ids = [e['id'] for e in batch_events]
-
-            # 캐시 조회 (덮어쓰기 모드가 아닐 때만)
-            batch_cache_hits = 0
-            if not self.overwrite:
-                cache = self._lookup_cache(worker_supabase, batch_titles)
-
-                titles_to_translate = []
-                indices_to_translate = []
-                translations = [''] * len(batch_titles)
-
-                for i, title in enumerate(batch_titles):
-                    if title in cache:
-                        translations[i] = cache[title]
-                        batch_cache_hits += 1
-                    else:
-                        titles_to_translate.append(title)
-                        indices_to_translate.append(i)
-
-                if titles_to_translate:
-                    api_results = self.translate_batch(titles_to_translate)
-                    for idx, trans in zip(indices_to_translate, api_results):
-                        translations[idx] = trans
-            else:
-                translations = self.translate_batch(batch_titles)
-                if len(translations) != len(batch_titles):
-                    translations = translations[:len(batch_titles)]
-
-            success = self._update_with_retry(worker_supabase, batch_ids, translations)
-
-            with self.lock:
-                self.total_translated += success
-                self.total_batches += 1
-                self.cache_hits += batch_cache_hits
-
-            progress = (self.total_batches / total_batches) * 100
-            cache_info = f" (캐시: {batch_cache_hits})" if batch_cache_hits > 0 else ""
-            print(f"  ✅ 배치 {batch_num:3d}/{total_batches} | "
-                  f"{success:3d}개 번역{cache_info} | "
-                  f"누적: {self.total_translated:,}개 ({progress:.1f}%)")
-
-            return {'success': True, 'count': success}
-
-        except Exception as e:
-            with self.lock:
-                self.failed_batches += 1
-            print(f"  ❌ 배치 {batch_num} 실패: {e}")
-            return {'success': False, 'error': str(e)}
-
     def run(self, max_batches: int = None):
         """번역 실행"""
         # 설정 출력
@@ -316,50 +317,92 @@ class Translator:
             print(f"  제외       : Sports")
         print()
 
-        # 대상 ID를 미리 모두 조회 (race condition 방지)
-        print("  ID 조회 중...")
+        # 1. 대상 이벤트 전체 조회
+        print("  이벤트 조회 중...")
         all_events = self.fetch_all_target_ids()
-        total_count = len(all_events)
+        total_events = len(all_events)
 
-        # 배치 분할
-        batches = [all_events[i:i + BATCH_SIZE] for i in range(0, total_count, BATCH_SIZE)]
-        total_batches = len(batches)
-
-        if max_batches:
-            batches = batches[:max_batches]
-            total_batches = len(batches)
-
-        print(f"  대상       : {total_count:,}개")
-        print(f"  배치       : {total_batches}개")
-        print(f"  예상 시간  : ~{(total_batches * 1.5 / self.workers / 60):.1f}분")
-        print(f"{'='*55}\n")
-
-        if total_count == 0:
+        if total_events == 0:
             print("  ✅ 번역할 이벤트가 없습니다.\n")
             return
 
+        # 2. 고유 제목 추출 (중복 제거)
+        all_titles = [e['title'] for e in all_events]
+        unique_titles = list(set(all_titles))
+        dedup_saved = total_events - len(unique_titles)
+
+        # 3. 캐시 선로딩 (덮어쓰기 모드가 아닐 때만)
+        cache = {}
+        if not self.overwrite:
+            cache = self._preload_cache(unique_titles)
+            self.cache_hits = len(cache)
+
+        # 4. 번역 필요한 제목만 필터
+        titles_to_translate = [t for t in unique_titles if t not in cache]
+
+        # 5. 번역 배치 분할
+        translate_batches = [
+            titles_to_translate[i:i + TRANSLATE_BATCH_SIZE]
+            for i in range(0, len(titles_to_translate), TRANSLATE_BATCH_SIZE)
+        ]
+        total_translate_batches = len(translate_batches)
+
+        if max_batches and total_translate_batches > max_batches:
+            translate_batches = translate_batches[:max_batches]
+            total_translate_batches = len(translate_batches)
+
+        print(f"\n  대상 이벤트 : {total_events:,}개")
+        print(f"  고유 제목   : {len(unique_titles):,}개 (중복 {dedup_saved:,}개 제거)")
+        if not self.overwrite:
+            print(f"  캐시 적중   : {len(cache):,}개")
+        print(f"  번역 필요   : {len(titles_to_translate):,}개")
+        print(f"  번역 배치   : {total_translate_batches}개")
+        if total_translate_batches > 0:
+            print(f"  예상 시간   : ~{(total_translate_batches * 1.5 / self.workers / 60):.1f}분")
+        print(f"{'='*55}\n")
+
         start_time = time.time()
 
-        # 병렬 처리 (ID 기반 배치)
-        with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {
-                executor.submit(self.process_batch, i + 1, batch, total_batches): i + 1
-                for i, batch in enumerate(batches)
-            }
-            for future in as_completed(futures):
-                future.result()
+        # 6. 병렬 번역 (unique title 기준)
+        title_map = dict(cache)  # 캐시 결과를 먼저 포함
 
-        # 결과
+        if translate_batches:
+            print("  [번역 단계]")
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                futures = {
+                    executor.submit(
+                        self._translate_batch_worker, i + 1, batch, total_translate_batches
+                    ): i + 1
+                    for i, batch in enumerate(translate_batches)
+                }
+                for future in as_completed(futures):
+                    batch_result = future.result()
+                    title_map.update(batch_result)
+
+        # 7. 벌크 DB 업데이트 (max_batches 적용 시 번역된 제목만 필터)
+        if max_batches:
+            translated_titles = set(title_map.keys())
+            events_to_update = [e for e in all_events if e['title'] in translated_titles]
+        else:
+            events_to_update = all_events
+
+        print(f"\n  [DB 저장 단계]")
+        self.total_translated = self._bulk_upsert(events_to_update, title_map)
+
+        # 8. 결과 출력
         elapsed = time.time() - start_time
         print(f"\n{'='*55}")
         print(f"  번역 완료!")
-        print(f"  번역 : {self.total_translated:,}개")
+        print(f"  이벤트 업데이트 : {self.total_translated:,}개")
+        print(f"  고유 번역       : {len(title_map):,}개")
         if self.cache_hits > 0:
-            print(f"  캐시 : {self.cache_hits:,}개 재사용")
-        print(f"  실패 : {self.failed_batches}개 배치")
-        print(f"  시간 : {elapsed/60:.1f}분")
+            print(f"  캐시 재사용     : {self.cache_hits:,}개")
+        if dedup_saved > 0:
+            print(f"  중복 절감       : {dedup_saved:,}개 (API 호출 절약)")
+        print(f"  실패 배치       : {self.failed_batches}개")
+        print(f"  시간            : {elapsed/60:.1f}분")
         if self.total_translated > 0:
-            print(f"  속도 : {self.total_translated/(elapsed/60):.0f}개/분")
+            print(f"  속도            : {self.total_translated/(elapsed/60):.0f}개/분")
         print(f"{'='*55}\n")
 
 
