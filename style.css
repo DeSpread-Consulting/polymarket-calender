@@ -1994,3 +1994,46 @@ body.admin-mode .container {
         padding: 8px 14px;
     }
 }
+
+/* ─── Phase 0: Modern CSS ─── */
+
+/* Container Queries — Week View */
+.week-day {
+    container-type: inline-size;
+    container-name: week-day;
+}
+
+@container week-day (max-width: 200px) {
+    .week-event-volume { display: none; }
+    .week-event-title { font-size: 10px; }
+}
+
+/* Container Queries — Calendar Overview */
+.calendar-overview-day {
+    container-type: inline-size;
+    container-name: cal-day;
+}
+
+@container cal-day (max-width: 120px) {
+    .overview-event-title { display: none; }
+    .overview-event-prob { font-size: 9px; }
+}
+
+/* View Transitions */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.15s;
+}
+
+/* :has() selectors */
+.calendar-overview-day:not(:has(.calendar-overview-events)) {
+    opacity: 0.5;
+}
+
+.filters-row:has(.filter-tag) {
+    border-color: var(--accent-blue);
+}
+
+.search-container:has(.search-input:not(:placeholder-shown)) {
+    border-color: var(--accent-blue);
+}
