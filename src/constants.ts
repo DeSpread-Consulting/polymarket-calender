@@ -4,7 +4,7 @@ export const CACHE_TIME_KEY = 'polymarket_cache_time';
 export const CACHE_DURATION = 5 * 60 * 1000; // 5분
 
 // Category to Emoji mapping
-export const categoryEmojis = {
+export const categoryEmojis: Record<string, string> = {
     'Sports': '⚽',
     'Crypto': '💰',
     'Politics': '🏛️',
@@ -18,7 +18,7 @@ export const categoryEmojis = {
 };
 
 // Category to Color mapping
-export const categoryColors = {
+export const categoryColors: Record<string, string> = {
     'Sports': '#3b82f6',
     'Crypto': '#f59e0b',
     'Politics': '#ef4444',

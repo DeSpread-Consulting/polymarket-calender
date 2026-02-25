@@ -1,14 +1,15 @@
-import { initSupabase } from './supabase.js';
-import { initTheme, initDensity, toggleTheme, toggleDensity } from './theme.js';
-import { initLanguage, translations, currentLang } from './i18n.js';
-import { initQuickFilters, openFilterModal, closeFilterModal, setupFilterOptions, applyFilters, resetFilters, clearAllFilters, renderFilterTags, updateActiveFiltersDisplay } from './filters.js';
-import { loadData, loadMoreData } from './data.js';
-import { renderCalendar } from './render/index.js';
-import { initTooltip } from './render/tooltip.js';
-import { closeModal } from './render/modal.js';
-import { initV2Admin } from './admin.js';
-import { calendarOverviewStartWeek, setCalendarOverviewStartWeek, setCurrentDate, allEvents } from './state.js';
-import { getKSTToday, addDays, toKSTDateString } from './utils.js';
+import { initSupabase } from './supabase.ts';
+import { initTheme, initDensity, toggleTheme, toggleDensity } from './theme.ts';
+import { initLanguage, translations, currentLang } from './i18n.ts';
+import { initQuickFilters, openFilterModal, closeFilterModal, setupFilterOptions, applyFilters, resetFilters, clearAllFilters, renderFilterTags, updateActiveFiltersDisplay } from './filters.ts';
+import { loadData, loadMoreData } from './data.ts';
+import { renderCalendar } from './render/index.ts';
+import { initTooltip } from './render/tooltip.ts';
+import { closeModal } from './render/modal.ts';
+import { initV2Admin } from './admin.ts';
+import { calendarOverviewStartWeek, setCalendarOverviewStartWeek, setCurrentDate, allEvents } from './state.ts';
+import { getKSTToday, addDays, toKSTDateString } from './utils.ts';
+import type { Filters } from './types.ts';
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 앱 시작');
@@ -27,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2Admin();
 });
 
-function setupEventListeners() {
+function setupEventListeners(): void {
     // Density toggle
     const densityToggle = document.getElementById('densityToggle');
     if (densityToggle) {
@@ -59,14 +60,14 @@ function setupEventListeners() {
     }
 
     // Calendar Overview navigation
-    document.getElementById('prevWeek').addEventListener('click', () => {
+    document.getElementById('prevWeek')!.addEventListener('click', () => {
         if (calendarOverviewStartWeek > 0) {
             setCalendarOverviewStartWeek(calendarOverviewStartWeek - 1);
             renderCalendar();
         }
     });
 
-    document.getElementById('nextWeek').addEventListener('click', async () => {
+    document.getElementById('nextWeek')!.addEventListener('click', async () => {
         setCalendarOverviewStartWeek(calendarOverviewStartWeek + 1);
 
         const todayKST = getKSTToday();
@@ -83,7 +84,7 @@ function setupEventListeners() {
     // Today button
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            if (e.target.dataset.view === 'today') {
+            if ((e.target as HTMLElement).dataset.view === 'today') {
                 setCurrentDate(new Date());
                 renderCalendar();
             }
@@ -91,55 +92,55 @@ function setupEventListeners() {
     });
 
     // Search
-    document.getElementById('searchInput').addEventListener('input', (e) => {
-        renderCalendar(e.target.value);
+    (document.getElementById('searchInput') as HTMLInputElement).addEventListener('input', (e) => {
+        renderCalendar((e.target as HTMLInputElement).value);
     });
 
     // Filter row click -> open filter modal
-    document.getElementById('filtersRow').addEventListener('click', (e) => {
-        if (e.target.closest('#clearFilters') || e.target.closest('.remove-tag')) {
+    document.getElementById('filtersRow')!.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('#clearFilters') || (e.target as HTMLElement).closest('.remove-tag')) {
             return;
         }
         openFilterModal();
     });
 
     // Filter modal events
-    document.getElementById('filterModalClose').addEventListener('click', closeFilterModal);
-    document.getElementById('filterModalOverlay').addEventListener('click', (e) => {
+    document.getElementById('filterModalClose')!.addEventListener('click', closeFilterModal);
+    document.getElementById('filterModalOverlay')!.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeFilterModal();
     });
 
     // Filter options
-    setupFilterOptions('timeRemainingOptions', 'timeRemaining');
-    setupFilterOptions('minVolumeOptions', 'minVolume');
-    setupFilterOptions('minLiquidityOptions', 'minLiquidity');
+    setupFilterOptions('timeRemainingOptions', 'timeRemaining' as keyof Filters);
+    setupFilterOptions('minVolumeOptions', 'minVolume' as keyof Filters);
+    setupFilterOptions('minLiquidityOptions', 'minLiquidity' as keyof Filters);
 
     // Tag search
-    document.getElementById('tagSearchInput').addEventListener('input', (e) => {
-        renderFilterTags(e.target.value);
+    (document.getElementById('tagSearchInput') as HTMLInputElement).addEventListener('input', (e) => {
+        renderFilterTags((e.target as HTMLInputElement).value);
     });
 
     // Show less tags toggle
-    document.getElementById('showLessTags').addEventListener('click', (e) => {
+    document.getElementById('showLessTags')!.addEventListener('click', (e) => {
         e.stopPropagation();
-        const tagsContainer = document.getElementById('filterTags');
+        const tagsContainer = document.getElementById('filterTags')!;
         tagsContainer.classList.toggle('collapsed');
-        const btn = document.getElementById('showLessTags');
+        const btn = document.getElementById('showLessTags')!;
         const t = translations[currentLang];
         btn.textContent = tagsContainer.classList.contains('collapsed') ? t.showMore : t.showLess;
     });
 
     // Apply/Reset filters
-    document.getElementById('applyFilters').addEventListener('click', applyFilters);
-    document.getElementById('resetFilters').addEventListener('click', resetFilters);
-    document.getElementById('clearFilters').addEventListener('click', (e) => {
+    document.getElementById('applyFilters')!.addEventListener('click', applyFilters);
+    document.getElementById('resetFilters')!.addEventListener('click', resetFilters);
+    document.getElementById('clearFilters')!.addEventListener('click', (e) => {
         e.stopPropagation();
         clearAllFilters();
     });
 
     // Event modal
-    document.getElementById('modalClose').addEventListener('click', closeModal);
-    document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    document.getElementById('modalClose')!.addEventListener('click', closeModal);
+    document.getElementById('modalOverlay')!.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeModal();
     });
 
@@ -152,11 +153,11 @@ function setupEventListeners() {
     });
 }
 
-function handleRefresh() {
+function handleRefresh(): void {
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) refreshBtn.classList.add('rotating');
 
-    const searchQuery = document.getElementById('searchInput').value;
+    const searchQuery = (document.getElementById('searchInput') as HTMLInputElement).value;
     renderCalendar(searchQuery);
 
     setTimeout(() => {

@@ -1,23 +1,24 @@
-import { calendarOverviewStartWeek } from '../state.js';
-import { categoryColors } from '../constants.js';
-import { toKSTDateString, getKSTToday, addDays, escapeHtml, applySafeImage, getMainProb, truncate, inferCategory } from '../utils.js';
-import { translations, currentLang, getTitle, getLocale } from '../i18n.js';
-import { getFilteredEvents } from '../filters.js';
-import { showEventTooltip, hideEventTooltip, positionTooltip } from './tooltip.js';
-import { openEventLink, showDayEvents } from './modal.js';
+import { calendarOverviewStartWeek } from '../state.ts';
+import { categoryColors } from '../constants.ts';
+import { toKSTDateString, getKSTToday, addDays, escapeHtml, applySafeImage, getMainProb, truncate, inferCategory } from '../utils.ts';
+import { translations, currentLang, getTitle, getLocale } from '../i18n.ts';
+import { getFilteredEvents } from '../filters.ts';
+import { showEventTooltip, hideEventTooltip, positionTooltip } from './tooltip.ts';
+import { openEventLink, showDayEvents } from './modal.ts';
+import type { PolyEvent } from '../types.ts';
 
-export function renderCalendarOverview(searchQuery = '') {
+export function renderCalendarOverview(searchQuery = ''): void {
     const todayKST = getKSTToday();
     const filtered = getFilteredEvents(searchQuery);
 
     const startDate = addDays(todayKST, 5 + (calendarOverviewStartWeek * 7));
 
-    const weekDates = [];
+    const weekDates: string[] = [];
     for (let i = 0; i < 21; i++) {
         weekDates.push(addDays(startDate, i));
     }
 
-    const eventsByDate = {};
+    const eventsByDate: Record<string, PolyEvent[]> = {};
     filtered.forEach(event => {
         if (event.end_date) {
             const dateKey = toKSTDateString(event.end_date);
@@ -31,12 +32,12 @@ export function renderCalendarOverview(searchQuery = '') {
     const rangeStart = new Date(startDate + 'T00:00:00');
     const rangeEnd = new Date(addDays(startDate, 20) + 'T00:00:00');
     const rangeText = `${rangeStart.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })} - ${rangeEnd.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })}`;
-    document.getElementById('calendarRange').textContent = rangeText;
+    document.getElementById('calendarRange')!.textContent = rangeText;
 
-    const daysContainer = document.getElementById('calendarOverviewDays');
+    const daysContainer = document.getElementById('calendarOverviewDays')!;
     daysContainer.innerHTML = '';
 
-    let previousMonth = null;
+    let previousMonth: number | null = null;
     weekDates.forEach(dateKey => {
         const dayEvents = eventsByDate[dateKey] || [];
         const date = new Date(dateKey + 'T00:00:00');
@@ -57,7 +58,7 @@ export function renderCalendarOverview(searchQuery = '') {
             monthLabel = `<div class="calendar-overview-month-label">${monthName}</div>`;
         }
 
-        const sortedEvents = [...dayEvents].sort((a, b) => (parseFloat(b.volume) || 0) - (parseFloat(a.volume) || 0));
+        const sortedEvents = [...dayEvents].sort((a, b) => (parseFloat(String(b.volume)) || 0) - (parseFloat(String(a.volume)) || 0));
         const topEvents = sortedEvents.slice(0, 3);
 
         dayEl.innerHTML = `
@@ -69,23 +70,23 @@ export function renderCalendarOverview(searchQuery = '') {
 
         daysContainer.appendChild(dayEl);
 
-        const moreLink = dayEl.querySelector('.calendar-overview-more-link[data-date-key]');
+        const moreLink = dayEl.querySelector('.calendar-overview-more-link[data-date-key]') as HTMLElement | null;
         if (moreLink) {
             moreLink.addEventListener('click', () => {
-                showDayEvents(moreLink.dataset.dateKey);
+                showDayEvents(moreLink.dataset.dateKey!);
             });
         }
 
         if (topEvents.length > 0) {
-            const eventsContainer = dayEl.querySelector('.calendar-overview-events');
+            const eventsContainer = dayEl.querySelector('.calendar-overview-events')!;
             topEvents.forEach(event => {
-                renderOverviewEventItem(eventsContainer, event);
+                renderOverviewEventItem(eventsContainer as HTMLElement, event);
             });
         }
     });
 }
 
-function renderOverviewEventItem(container, event) {
+function renderOverviewEventItem(container: HTMLElement, event: PolyEvent): void {
     const imageUrl = event.image_url || '';
     const prob = getMainProb(event);
     const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
@@ -121,15 +122,15 @@ function renderOverviewEventItem(container, event) {
         <span class="overview-event-prob ${probClass}">${prob}%</span>
     `;
 
-    const eventImg = eventEl.querySelector('.overview-event-image');
+    const eventImg = eventEl.querySelector('.overview-event-image') as HTMLImageElement | null;
     if (eventImg) applySafeImage(eventImg, imageUrl);
 
     eventEl.querySelectorAll('[data-admin-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const id = btn.dataset.eventId;
-            if (btn.dataset.adminAction === 'edit' && window.__v2OpenEditModal) window.__v2OpenEditModal(id);
-            else if (btn.dataset.adminAction === 'toggle-hidden' && window.__v2ToggleHidden) window.__v2ToggleHidden(id);
+            const id = (btn as HTMLElement).dataset.eventId!;
+            if ((btn as HTMLElement).dataset.adminAction === 'edit' && window.__v2OpenEditModal) window.__v2OpenEditModal(id);
+            else if ((btn as HTMLElement).dataset.adminAction === 'toggle-hidden' && window.__v2ToggleHidden) window.__v2ToggleHidden(id);
         });
     });
 

@@ -1,8 +1,9 @@
-import { renderCalendar } from './render/index.js';
+import { renderCalendar } from './render/index.ts';
+import type { PolyEvent, Language, TranslationSet } from './types.ts';
 
 // ─── 번역 데이터 ───
 
-export const translations = {
+export const translations: Record<Language, TranslationSet> = {
     ko: {
         search: '시장 검색...',
         filters: '필터',
@@ -97,28 +98,28 @@ export const translations = {
     }
 };
 
-export let currentLang = localStorage.getItem('language') || 'ko';
+export let currentLang: Language = (localStorage.getItem('language') as Language) || 'ko';
 
-export function getTitle(event) {
+export function getTitle(event: PolyEvent): string {
     if (currentLang === 'ko' && event.title_ko) {
         return event.title_ko;
     }
     return event.title;
 }
 
-export function getLocale() {
+export function getLocale(): string {
     return currentLang === 'ko' ? 'ko-KR' : 'en-US';
 }
 
-export function getTranslatedCategory(category) {
+export function getTranslatedCategory(category: string): string {
     const t = translations[currentLang];
     return t.categories[category] || category;
 }
 
-export function translatePage() {
+export function translatePage(): void {
     const t = translations[currentLang];
 
-    const searchInput = document.getElementById('searchInput');
+    const searchInput = document.getElementById('searchInput') as HTMLInputElement | null;
     if (searchInput) searchInput.placeholder = t.search;
 
     const dataRangeInfo = document.getElementById('dataRangeInfo');
@@ -129,7 +130,7 @@ export function translatePage() {
 
     const filterLabels = document.querySelectorAll('.filter-label');
     filterLabels.forEach(label => {
-        if (label.textContent.trim().includes('Filter')) {
+        if (label.textContent?.trim().includes('Filter')) {
             const svg = label.querySelector('svg');
             label.textContent = t.filters;
             if (svg) label.prepend(svg);
@@ -147,7 +148,10 @@ export function translatePage() {
     });
 
     const langToggle = document.getElementById('langToggle');
-    if (langToggle) langToggle.querySelector('.lang-text').textContent = currentLang.toUpperCase();
+    if (langToggle) {
+        const langText = langToggle.querySelector('.lang-text');
+        if (langText) langText.textContent = currentLang.toUpperCase();
+    }
 
     const filterModalTitle = document.getElementById('filterModalTitle');
     if (filterModalTitle) filterModalTitle.textContent = t.filters;
@@ -155,7 +159,7 @@ export function translatePage() {
     const filterTagsLabel = document.getElementById('filterTagsLabel');
     if (filterTagsLabel) filterTagsLabel.textContent = t.tagsLabel;
 
-    const tagSearchInput = document.getElementById('tagSearchInput');
+    const tagSearchInput = document.getElementById('tagSearchInput') as HTMLInputElement | null;
     if (tagSearchInput) tagSearchInput.placeholder = t.searchTagsPlaceholder;
 
     const filterCategoriesLabel = document.getElementById('filterCategoriesLabel');
@@ -183,7 +187,7 @@ export function translatePage() {
     if (applyBtn) applyBtn.textContent = t.applyFiltersBtn;
 
     document.querySelectorAll('#timeRemainingOptions .filter-option').forEach(btn => {
-        const val = btn.dataset.value;
+        const val = (btn as HTMLElement).dataset.value;
         if (val === 'all') {
             btn.textContent = t.all;
         } else {
@@ -192,19 +196,19 @@ export function translatePage() {
     });
 
     document.querySelectorAll('#minVolumeOptions .filter-option, #minLiquidityOptions .filter-option').forEach(btn => {
-        if (btn.dataset.value === '0') btn.textContent = t.all;
+        if ((btn as HTMLElement).dataset.value === '0') btn.textContent = t.all;
     });
 
     renderCalendar();
 }
 
-export function toggleLanguage() {
+export function toggleLanguage(): void {
     currentLang = currentLang === 'ko' ? 'en' : 'ko';
     localStorage.setItem('language', currentLang);
     translatePage();
 }
 
-export function initLanguage() {
+export function initLanguage(): void {
     translatePage();
     const langToggle = document.getElementById('langToggle');
     if (langToggle) {

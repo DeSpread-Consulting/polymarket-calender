@@ -1,22 +1,23 @@
-import { currentLang } from '../i18n.js';
-import { translations, getTitle, getLocale } from '../i18n.js';
-import { categoryColors } from '../constants.js';
-import { toKSTDateString, getKSTToday, getKSTTime, getTimeClass, addDays, escapeHtml, formatCurrency, applySafeImage, getMainProb, inferCategory } from '../utils.js';
-import { getFilteredEvents } from '../filters.js';
-import { showEventTooltip, hideEventTooltip, positionTooltip } from './tooltip.js';
-import { openEventLink } from './modal.js';
+import { currentLang } from '../i18n.ts';
+import { translations, getTitle, getLocale } from '../i18n.ts';
+import { categoryColors } from '../constants.ts';
+import { toKSTDateString, getKSTToday, getKSTTime, getTimeClass, addDays, escapeHtml, formatCurrency, applySafeImage, getMainProb, inferCategory } from '../utils.ts';
+import { getFilteredEvents } from '../filters.ts';
+import { showEventTooltip, hideEventTooltip, positionTooltip } from './tooltip.ts';
+import { openEventLink } from './modal.ts';
+import type { PolyEvent } from '../types.ts';
 
-export function renderWeekView(searchQuery = '') {
+export function renderWeekView(searchQuery = ''): void {
     const todayKST = getKSTToday();
     const filtered = getFilteredEvents(searchQuery);
     const nowKST = new Date();
 
-    const weekDates = [];
+    const weekDates: string[] = [];
     for (let i = 0; i < 5; i++) {
         weekDates.push(addDays(todayKST, i));
     }
 
-    const eventsByDate = {};
+    const eventsByDate: Record<string, PolyEvent[]> = {};
     filtered.forEach(event => {
         if (event.end_date) {
             const dateKey = toKSTDateString(event.end_date);
@@ -44,9 +45,9 @@ export function renderWeekView(searchQuery = '') {
     const weekStart = new Date(todayKST + 'T00:00:00');
     const weekEnd = new Date(addDays(todayKST, 4) + 'T00:00:00');
     const weekRangeText = `${weekStart.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })} - ${weekEnd.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' })}`;
-    document.getElementById('weekRange').textContent = weekRangeText;
+    document.getElementById('weekRange')!.textContent = weekRangeText;
 
-    const timeline = document.getElementById('weekTimeline');
+    const timeline = document.getElementById('weekTimeline')!;
     timeline.innerHTML = '';
 
     weekDates.forEach(dateKey => {
@@ -73,7 +74,7 @@ export function renderWeekView(searchQuery = '') {
 
         timeline.appendChild(dayEl);
 
-        const eventsContainer = document.getElementById(`week-${dateKey}`);
+        const eventsContainer = document.getElementById(`week-${dateKey}`)!;
         if (dayEvents.length === 0) {
             eventsContainer.innerHTML = `<div class="week-no-events">${translations[currentLang].noEvents}</div>`;
         } else {
@@ -84,7 +85,7 @@ export function renderWeekView(searchQuery = '') {
     });
 }
 
-function renderWeekEventCard(container, event) {
+function renderWeekEventCard(container: HTMLElement, event: PolyEvent): void {
     const time = getKSTTime(event.end_date);
     const timeClass = getTimeClass(time);
     const imageUrl = event.image_url || '';
@@ -137,10 +138,10 @@ function renderWeekEventCard(container, event) {
         </div>
     `;
 
-    const eventImg = eventEl.querySelector('.week-event-image');
+    const eventImg = eventEl.querySelector('.week-event-image') as HTMLImageElement | null;
     if (eventImg) applySafeImage(eventImg, imageUrl);
 
-    const linkBtn = eventEl.querySelector('.event-link-btn[data-polymarket-slug]');
+    const linkBtn = eventEl.querySelector('.event-link-btn[data-polymarket-slug]') as HTMLElement | null;
     if (linkBtn) {
         linkBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -152,10 +153,9 @@ function renderWeekEventCard(container, event) {
     eventEl.querySelectorAll('[data-admin-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const id = btn.dataset.eventId;
-            // admin.js에서 전역 등록한 함수 호출
-            if (btn.dataset.adminAction === 'edit' && window.__v2OpenEditModal) window.__v2OpenEditModal(id);
-            else if (btn.dataset.adminAction === 'toggle-hidden' && window.__v2ToggleHidden) window.__v2ToggleHidden(id);
+            const id = (btn as HTMLElement).dataset.eventId!;
+            if ((btn as HTMLElement).dataset.adminAction === 'edit' && window.__v2OpenEditModal) window.__v2OpenEditModal(id);
+            else if ((btn as HTMLElement).dataset.adminAction === 'toggle-hidden' && window.__v2ToggleHidden) window.__v2ToggleHidden(id);
         });
     });
 

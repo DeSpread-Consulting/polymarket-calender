@@ -1,8 +1,9 @@
-import { escapeHtml, applySafeImage, getMainProb, toKSTDateString } from '../utils.js';
-import { getTitle, getLocale } from '../i18n.js';
-import { getFilteredEvents } from '../filters.js';
+import { escapeHtml, applySafeImage, getMainProb, toKSTDateString } from '../utils.ts';
+import { getTitle, getLocale } from '../i18n.ts';
+import { getFilteredEvents } from '../filters.ts';
+import type { PolyEvent } from '../types.ts';
 
-export function openEventLink(slug, searchQuery, eventSlug) {
+export function openEventLink(slug: string, searchQuery: string, eventSlug: string): void {
     if (searchQuery) {
         const encoded = encodeURIComponent(searchQuery);
         window.open(`https://polymarket.com/markets?_q=${encoded}`, '_blank');
@@ -33,32 +34,40 @@ export function openEventLink(slug, searchQuery, eventSlug) {
             normalizedSlug = slug.replace(greaterLessThanPattern, '$1-price-on-$2');
         } else if (reachDipPattern.test(slug)) {
             const match = slug.match(reachDipPattern);
-            const subject = match[1];
-            const period = match[2];
-            const sq = `${subject} ${period.replace(/-/g, ' ')}`;
-            window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
-            return;
+            if (match) {
+                const subject = match[1];
+                const period = match[2];
+                const sq = `${subject} ${period.replace(/-/g, ' ')}`;
+                window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
+                return;
+            }
         } else if (trumpSayThisWeekPattern.test(slug)) {
             normalizedSlug = slug.replace(trumpSayThisWeekPattern, 'what-will-trump-say-this-week-$1');
         } else if (robotDancersPattern.test(slug)) {
             const match = slug.match(robotDancersPattern);
-            const event = match[1];
-            const sq = `robot dancers ${event.replace(/-/g, ' ')}`;
-            window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
-            return;
+            if (match) {
+                const eventName = match[1];
+                const sq = `robot dancers ${eventName.replace(/-/g, ' ')}`;
+                window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
+                return;
+            }
         } else if (stockClosePattern.test(slug)) {
             const match = slug.match(stockClosePattern);
-            const ticker = match[1];
-            const period = match[2];
-            const sq = `${ticker} close ${period.replace(/-/g, ' ')}`;
-            window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
-            return;
+            if (match) {
+                const ticker = match[1];
+                const period = match[2];
+                const sq = `${ticker} close ${period.replace(/-/g, ' ')}`;
+                window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
+                return;
+            }
         } else if (exactlyNumberPattern.test(slug)) {
             const match = slug.match(exactlyNumberPattern);
-            const event = match[1];
-            const sq = event.replace(/-/g, ' ').replace(/pt/g, '.');
-            window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
-            return;
+            if (match) {
+                const eventName = match[1];
+                const sq = eventName.replace(/-/g, ' ').replace(/pt/g, '.');
+                window.open(`https://polymarket.com/markets?_q=${encodeURIComponent(sq)}`, '_blank');
+                return;
+            }
         } else if (plusPattern.test(slug)) {
             normalizedSlug = slug.replace(plusPattern, '');
         } else if (numericRangePattern.test(slug)) {
@@ -71,8 +80,8 @@ export function openEventLink(slug, searchQuery, eventSlug) {
     }
 }
 
-export function showDayEvents(dateKey) {
-    const filtered = getFilteredEvents(document.getElementById('searchInput').value);
+export function showDayEvents(dateKey: string): void {
+    const filtered = getFilteredEvents((document.getElementById('searchInput') as HTMLInputElement).value);
     const dayEvents = filtered.filter(e => toKSTDateString(e.end_date) === dateKey);
 
     const date = new Date(dateKey + 'T00:00:00');
@@ -84,19 +93,19 @@ export function showDayEvents(dateKey) {
         timeZone: 'Asia/Seoul'
     });
 
-    document.getElementById('modalDate').textContent = `${dateStr} 만료 예정`;
+    document.getElementById('modalDate')!.textContent = `${dateStr} 만료 예정`;
 
-    const modalBody = document.getElementById('modalBody');
+    const modalBody = document.getElementById('modalBody')!;
     modalBody.innerHTML = '';
 
     dayEvents.forEach(event => {
         renderModalEventItem(modalBody, event);
     });
 
-    document.getElementById('modalOverlay').classList.add('active');
+    document.getElementById('modalOverlay')!.classList.add('active');
 }
 
-function renderModalEventItem(container, event) {
+function renderModalEventItem(container: HTMLElement, event: PolyEvent): void {
     const imageUrl = event.image_url || '';
     const prob = getMainProb(event);
     const probClass = prob < 30 ? 'low' : prob < 70 ? 'mid' : '';
@@ -117,11 +126,11 @@ function renderModalEventItem(container, event) {
         </div>
         <span class="modal-event-prob ${probClass}">${prob}%</span>
     `;
-    const eventImg = eventEl.querySelector('.modal-event-image');
+    const eventImg = eventEl.querySelector('.modal-event-image') as HTMLImageElement | null;
     if (eventImg) applySafeImage(eventImg, imageUrl);
     container.appendChild(eventEl);
 }
 
-export function closeModal() {
-    document.getElementById('modalOverlay').classList.remove('active');
+export function closeModal(): void {
+    document.getElementById('modalOverlay')!.classList.remove('active');
 }

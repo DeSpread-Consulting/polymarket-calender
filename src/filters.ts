@@ -1,12 +1,13 @@
-import { filters, tempFilters, allTags, allCategories, allEvents, setFilters, setTempFilters } from './state.js';
-import { categoryColors } from './constants.js';
-import { formatCurrency, inferCategory } from './utils.js';
-import { translations, currentLang } from './i18n.js';
-import { renderCalendar } from './render/index.js';
+import { filters, tempFilters, allTags, allCategories, allEvents, setFilters, setTempFilters } from './state.ts';
+import { categoryColors } from './constants.ts';
+import { formatCurrency, inferCategory } from './utils.ts';
+import { translations, currentLang } from './i18n.ts';
+import { renderCalendar } from './render/index.ts';
+import type { PolyEvent, Filters } from './types.ts';
 
 // ─── Quick Category Filters ───
 
-export function initQuickFilters() {
+export function initQuickFilters(): void {
     const quickFiltersContainer = document.getElementById('quickFilters');
     if (!quickFiltersContainer) return;
 
@@ -41,7 +42,7 @@ export function initQuickFilters() {
     });
 }
 
-export function toggleCategoryFilter(category) {
+export function toggleCategoryFilter(category: string): void {
     const index = filters.excludedCategories.indexOf(category);
     if (index > -1) {
         filters.excludedCategories.splice(index, 1);
@@ -54,11 +55,11 @@ export function toggleCategoryFilter(category) {
     renderCalendar();
 }
 
-export function updateQuickFilterChips() {
+export function updateQuickFilterChips(): void {
     const chips = document.querySelectorAll('.category-chip');
     chips.forEach(chip => {
-        const category = chip.dataset.category;
-        if (filters.excludedCategories.includes(category)) {
+        const category = (chip as HTMLElement).dataset.category;
+        if (category && filters.excludedCategories.includes(category)) {
             chip.classList.add('excluded');
         } else {
             chip.classList.remove('excluded');
@@ -68,20 +69,20 @@ export function updateQuickFilterChips() {
 
 // ─── Filter Modal ───
 
-export function openFilterModal() {
+export function openFilterModal(): void {
     setTempFilters(JSON.parse(JSON.stringify(filters)));
     renderFilterTags();
     renderFilterCategories();
     syncFilterUI();
-    document.getElementById('filterModalOverlay').classList.add('active');
+    document.getElementById('filterModalOverlay')!.classList.add('active');
 }
 
-export function closeFilterModal() {
-    document.getElementById('filterModalOverlay').classList.remove('active');
+export function closeFilterModal(): void {
+    document.getElementById('filterModalOverlay')!.classList.remove('active');
 }
 
-export function renderFilterTags(searchQuery = '') {
-    const container = document.getElementById('filterTags');
+export function renderFilterTags(searchQuery = ''): void {
+    const container = document.getElementById('filterTags')!;
     container.innerHTML = '';
 
     const query = searchQuery.toLowerCase();
@@ -105,8 +106,8 @@ export function renderFilterTags(searchQuery = '') {
     });
 }
 
-export function renderFilterCategories() {
-    const container = document.getElementById('filterCategories');
+export function renderFilterCategories(): void {
+    const container = document.getElementById('filterCategories')!;
     container.innerHTML = '';
 
     Object.entries(allCategories).forEach(([category, count]) => {
@@ -126,35 +127,37 @@ export function renderFilterCategories() {
     });
 }
 
-export function syncFilterUI() {
+export function syncFilterUI(): void {
     document.querySelectorAll('#timeRemainingOptions .filter-option').forEach(btn => {
-        const value = btn.dataset.value === 'all' ? 'all' : parseInt(btn.dataset.value);
+        const el = btn as HTMLElement;
+        const value: string | number = el.dataset.value === 'all' ? 'all' : parseInt(el.dataset.value!);
         btn.classList.toggle('active', tempFilters.timeRemaining === value);
     });
 
     document.querySelectorAll('#minVolumeOptions .filter-option').forEach(btn => {
-        const value = parseInt(btn.dataset.value);
+        const value = parseInt((btn as HTMLElement).dataset.value!);
         btn.classList.toggle('active', tempFilters.minVolume === value);
     });
 
     document.querySelectorAll('#minLiquidityOptions .filter-option').forEach(btn => {
-        const value = parseInt(btn.dataset.value);
+        const value = parseInt((btn as HTMLElement).dataset.value!);
         btn.classList.toggle('active', tempFilters.minLiquidity === value);
     });
 }
 
-export function setupFilterOptions(containerId, filterKey) {
-    const container = document.getElementById(containerId);
+export function setupFilterOptions(containerId: string, filterKey: keyof Filters): void {
+    const container = document.getElementById(containerId)!;
     container.querySelectorAll('.filter-option').forEach(btn => {
         btn.addEventListener('click', () => {
             container.querySelectorAll('.filter-option').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            tempFilters[filterKey] = btn.dataset.value === 'all' ? 'all' : parseInt(btn.dataset.value);
+            const val = (btn as HTMLElement).dataset.value;
+            (tempFilters as Record<string, unknown>)[filterKey] = val === 'all' ? 'all' : parseInt(val!);
         });
     });
 }
 
-export function applyFilters() {
+export function applyFilters(): void {
     setFilters(JSON.parse(JSON.stringify(tempFilters)));
     closeFilterModal();
     updateQuickFilterChips();
@@ -162,7 +165,7 @@ export function applyFilters() {
     renderCalendar();
 }
 
-export function resetFilters() {
+export function resetFilters(): void {
     setTempFilters({
         tags: [],
         excludedCategories: ['Sports'],
@@ -175,7 +178,7 @@ export function resetFilters() {
     syncFilterUI();
 }
 
-export function clearAllFilters() {
+export function clearAllFilters(): void {
     setFilters({
         tags: [],
         excludedCategories: ['Sports'],
@@ -188,9 +191,9 @@ export function clearAllFilters() {
     renderCalendar();
 }
 
-export function updateActiveFiltersDisplay() {
-    const container = document.getElementById('activeFilters');
-    const clearBtn = document.getElementById('clearFilters');
+export function updateActiveFiltersDisplay(): void {
+    const container = document.getElementById('activeFilters')!;
+    const clearBtn = document.getElementById('clearFilters') as HTMLElement;
     container.innerHTML = '';
 
     let hasFilters = false;
@@ -244,8 +247,9 @@ export function updateActiveFiltersDisplay() {
     container.querySelectorAll('.remove-tag').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const type = btn.dataset.type;
-            const value = btn.dataset.value;
+            const el = btn as HTMLElement;
+            const type = el.dataset.type;
+            const value = el.dataset.value;
 
             if (type === 'tag') {
                 filters.tags = filters.tags.filter(t => t !== value);
@@ -267,13 +271,13 @@ export function updateActiveFiltersDisplay() {
 
 // ─── 필터링 로직 ───
 
-export function getFilteredEvents(searchQuery = '') {
+export function getFilteredEvents(searchQuery = ''): PolyEvent[] {
     let filtered = [...allEvents];
     const now = new Date();
 
     if (filters.tags.length > 0) {
         filtered = filtered.filter(e =>
-            e.tags && filters.tags.some(tag => e.tags.includes(tag))
+            e.tags && filters.tags.some(tag => e.tags!.includes(tag))
         );
     }
 
@@ -290,7 +294,7 @@ export function getFilteredEvents(searchQuery = '') {
     });
 
     if (filters.timeRemaining !== 'all') {
-        const days = parseInt(filters.timeRemaining);
+        const days = parseInt(String(filters.timeRemaining));
         const maxDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
         filtered = filtered.filter(e => {
             const endDate = new Date(e.end_date);
@@ -299,11 +303,11 @@ export function getFilteredEvents(searchQuery = '') {
     }
 
     if (filters.minVolume > 0) {
-        filtered = filtered.filter(e => parseFloat(e.volume) >= filters.minVolume);
+        filtered = filtered.filter(e => parseFloat(String(e.volume)) >= filters.minVolume);
     }
 
     if (filters.minLiquidity > 0) {
-        filtered = filtered.filter(e => parseFloat(e.volume) * 0.1 >= filters.minLiquidity);
+        filtered = filtered.filter(e => parseFloat(String(e.volume)) * 0.1 >= filters.minLiquidity);
     }
 
     if (searchQuery) {

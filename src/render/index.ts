@@ -1,7 +1,7 @@
-import { renderWeekView } from './weekView.js';
-import { renderCalendarOverview } from './calendarView.js';
+import { renderWeekView } from './weekView.ts';
+import { renderCalendarOverview } from './calendarView.ts';
 
-export function renderCalendar(searchQuery = '') {
+export function renderCalendar(searchQuery = ''): void {
     if (document.startViewTransition) {
         document.startViewTransition(() => {
             renderWeekView(searchQuery);

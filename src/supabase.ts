@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-import { setSupabaseClient } from './state.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.ts';
+import { setSupabaseClient } from './state.ts';
 
-export function initSupabase() {
+export function initSupabase(): void {
     if (!SUPABASE_URL || SUPABASE_URL === 'YOUR_SUPABASE_URL') {
         console.warn('Supabase URL이 설정되지 않았습니다.');
         return;

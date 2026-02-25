@@ -1,14 +1,15 @@
-import { supabaseClient, allEvents, isAdminMode, setAllEvents, setIsLoadingMore, setAllTags, setAllCategories } from './state.js';
-import { CACHE_KEY, CACHE_TIME_KEY, CACHE_DURATION } from './constants.js';
-import { toKSTDateString, addDays, inferCategory } from './utils.js';
+import { supabaseClient, allEvents, isAdminMode, setAllEvents, setIsLoadingMore, setAllTags, setAllCategories } from './state.ts';
+import { CACHE_KEY, CACHE_TIME_KEY, CACHE_DURATION } from './constants.ts';
+import { toKSTDateString, addDays, inferCategory } from './utils.ts';
+import type { PolyEvent } from './types.ts';
 
 // ─── 그룹화 ───
 
-export function groupSimilarMarkets(events) {
-    const groups = new Map();
+export function groupSimilarMarkets(events: PolyEvent[]): PolyEvent[] {
+    const groups = new Map<string, PolyEvent[]>();
 
     events.forEach(event => {
-        let groupKey;
+        let groupKey: string;
         if (event.image_url) {
             groupKey = `${event.image_url}|${event.end_date}`;
         } else {
@@ -18,10 +19,10 @@ export function groupSimilarMarkets(events) {
         if (!groups.has(groupKey)) {
             groups.set(groupKey, []);
         }
-        groups.get(groupKey).push(event);
+        groups.get(groupKey)!.push(event);
     });
 
-    const deduplicated = [];
+    const deduplicated: PolyEvent[] = [];
     let groupedCount = 0;
 
     groups.forEach(group => {
@@ -29,10 +30,10 @@ export function groupSimilarMarkets(events) {
             deduplicated.push(group[0]);
         } else {
             groupedCount++;
-            const totalVolume = group.reduce((sum, e) => sum + parseFloat(e.volume || 0), 0);
+            const totalVolume = group.reduce((sum, e) => sum + parseFloat(String(e.volume || 0)), 0);
             const best = group.reduce((best, curr) => {
-                const bestYesProb = parseFloat(best.probs[0]);
-                const currYesProb = parseFloat(curr.probs[0]);
+                const bestYesProb = parseFloat(String(best.probs[0]));
+                const currYesProb = parseFloat(String(curr.probs[0]));
                 return currYesProb > bestYesProb ? curr : best;
             });
             best._totalVolume = totalVolume;
@@ -50,8 +51,8 @@ export function groupSimilarMarkets(events) {
 
 // ─── 태그/카테고리 추출 ───
 
-export function extractTags() {
-    let tags = {};
+export function extractTags(): void {
+    const tags: Record<string, number> = {};
     allEvents.forEach(event => {
         if (event.tags && Array.isArray(event.tags)) {
             event.tags.forEach(tag => {
@@ -62,15 +63,15 @@ export function extractTags() {
 
     const sortedTags = Object.entries(tags)
         .sort((a, b) => b[1] - a[1])
-        .reduce((obj, [key, value]) => { obj[key] = value; return obj; }, {});
+        .reduce((obj: Record<string, number>, [key, value]) => { obj[key] = value; return obj; }, {});
 
     setAllTags(sortedTags);
     const tagCountEl = document.getElementById('tagCount');
     if (tagCountEl) tagCountEl.textContent = `(${Object.keys(sortedTags).length})`;
 }
 
-export function extractCategories() {
-    let cats = {};
+export function extractCategories(): void {
+    const cats: Record<string, number> = {};
     allEvents.forEach(event => {
         const category = inferCategory(event);
         cats[category] = (cats[category] || 0) + 1;
@@ -78,14 +79,14 @@ export function extractCategories() {
 
     const sortedCategories = Object.entries(cats)
         .sort((a, b) => b[1] - a[1])
-        .reduce((obj, [key, value]) => { obj[key] = value; return obj; }, {});
+        .reduce((obj: Record<string, number>, [key, value]) => { obj[key] = value; return obj; }, {});
 
     setAllCategories(sortedCategories);
 }
 
 // ─── 데이터 로드 ───
 
-export async function loadData() {
+export async function loadData(): Promise<void> {
     console.log('📥 데이터 로드 시작');
 
     if (!supabaseClient) {
@@ -145,11 +146,11 @@ export async function loadData() {
             const maxDate = upcomingWeeks.toISOString();
 
             const CONCURRENT = 2;
-            let allData = [];
+            let allData: PolyEvent[] = [];
             let offset = 0;
             let hasMore = true;
 
-            const fetchPage = (off) => supabaseClient
+            const fetchPage = (off: number) => supabaseClient!
                 .from('poly_events')
                 .select('id, title, title_ko, slug, event_slug, end_date, volume, volume_24hr, probs, category, closed, image_url, tags, hidden')
                 .gte('end_date', now)
@@ -171,7 +172,7 @@ export async function loadData() {
                 for (const result of results) {
                     if (result.error) throw result.error;
                     if (result.data && result.data.length > 0) {
-                        allData = allData.concat(result.data);
+                        allData = allData.concat(result.data as PolyEvent[]);
                         batchCount += result.data.length;
                     }
                 }
@@ -209,7 +210,7 @@ export async function loadData() {
     }
 }
 
-export async function loadMoreData(targetDate) {
+export async function loadMoreData(targetDate: string): Promise<void> {
     if (!supabaseClient || isAdminMode) return;
 
     setIsLoadingMore(true);
@@ -241,7 +242,7 @@ export async function loadMoreData(targetDate) {
 
             if (data && data.length > 0) {
                 const existingIds = new Set(allEvents.map(e => e.id));
-                const newEvents = data.filter(e => !existingIds.has(e.id));
+                const newEvents = (data as PolyEvent[]).filter(e => !existingIds.has(e.id));
 
                 setAllEvents(groupSimilarMarkets(allEvents.concat(newEvents)));
                 console.log('✅ 추가 로드:', newEvents.length, '건');
@@ -271,17 +272,17 @@ export async function loadMoreData(targetDate) {
     setIsLoadingMore(false);
 }
 
-function generateDemoData() {
+function generateDemoData(): PolyEvent[] {
     const categories = ['Sports', 'Crypto', 'Politics', 'Pop Culture', 'Science', 'Business'];
     const demoTags = ['Sports', 'Games', 'Soccer', 'Politics', 'Basketball', 'Crypto', 'NCAA', 'Trump', 'Elections'];
-    const demoEvents = [];
+    const demoEvents: PolyEvent[] = [];
     const now = new Date();
 
     for (let i = 0; i < 500; i++) {
         const endDate = new Date(now);
         endDate.setDate(endDate.getDate() + Math.floor(Math.random() * 60) - 10);
         const prob = Math.random();
-        const eventTags = [];
+        const eventTags: string[] = [];
         const numTags = Math.floor(Math.random() * 3);
         for (let j = 0; j < numTags; j++) {
             eventTags.push(demoTags[Math.floor(Math.random() * demoTags.length)]);
@@ -294,7 +295,7 @@ function generateDemoData() {
             end_date: endDate.toISOString(),
             volume: Math.random() * 10000000,
             volume_24hr: Math.random() * 500000,
-            probs: [prob.toFixed(2), (1 - prob).toFixed(2)],
+            probs: [parseFloat(prob.toFixed(2)), parseFloat((1 - prob).toFixed(2))],
             outcomes: ['Yes', 'No'],
             category: categories[Math.floor(Math.random() * categories.length)],
             tags: eventTags

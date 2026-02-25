@@ -1,14 +1,15 @@
-import { supabaseClient, allEvents, isAdminMode, v2EditingEventId, setIsAdminMode, setV2EditingEventId, setAllEvents } from './state.js';
-import { CACHE_KEY, CACHE_TIME_KEY } from './constants.js';
-import { adminSignIn, adminSignOut, getAdminSession, onAdminAuthStateChange } from './auth.js';
-import { groupSimilarMarkets, extractTags, extractCategories, loadData } from './data.js';
-import { renderCalendar } from './render/index.js';
+import { supabaseClient, allEvents, isAdminMode, v2EditingEventId, setIsAdminMode, setV2EditingEventId, setAllEvents } from './state.ts';
+import { CACHE_KEY, CACHE_TIME_KEY } from './constants.ts';
+import { adminSignIn, adminSignOut, getAdminSession, onAdminAuthStateChange } from './auth.ts';
+import { groupSimilarMarkets, extractTags, extractCategories, loadData } from './data.ts';
+import { renderCalendar } from './render/index.ts';
+import type { PolyEvent } from './types.ts';
 
 // Admin 함수를 window에 등록 (render 모듈에서 호출하기 위해)
 window.__v2OpenEditModal = v2OpenEditModal;
 window.__v2ToggleHidden = v2ToggleHidden;
 
-export async function initV2Admin() {
+export async function initV2Admin(): Promise<void> {
     if (!supabaseClient) return;
 
     const adminToggle = document.getElementById('adminToggle');
@@ -31,25 +32,25 @@ export async function initV2Admin() {
 
     const loginOverlay = document.getElementById('adminLoginOverlay');
     if (loginOverlay) {
-        document.getElementById('adminLoginClose').addEventListener('click', v2CloseLoginModal);
-        document.getElementById('v2LoginCancel').addEventListener('click', v2CloseLoginModal);
+        document.getElementById('adminLoginClose')!.addEventListener('click', v2CloseLoginModal);
+        document.getElementById('v2LoginCancel')!.addEventListener('click', v2CloseLoginModal);
         loginOverlay.addEventListener('click', (e) => {
             if (e.target === loginOverlay) v2CloseLoginModal();
         });
-        document.getElementById('v2LoginSubmit').addEventListener('click', v2HandleLogin);
-        document.getElementById('v2AdminPassword').addEventListener('keydown', (e) => {
+        document.getElementById('v2LoginSubmit')!.addEventListener('click', v2HandleLogin);
+        document.getElementById('v2AdminPassword')!.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') v2HandleLogin();
         });
     }
 
     const editOverlay = document.getElementById('v2EditOverlay');
     if (editOverlay) {
-        document.getElementById('v2EditClose').addEventListener('click', v2CloseEditModal);
-        document.getElementById('v2EditCancel').addEventListener('click', v2CloseEditModal);
+        document.getElementById('v2EditClose')!.addEventListener('click', v2CloseEditModal);
+        document.getElementById('v2EditCancel')!.addEventListener('click', v2CloseEditModal);
         editOverlay.addEventListener('click', (e) => {
             if (e.target === editOverlay) v2CloseEditModal();
         });
-        document.getElementById('v2EditSave').addEventListener('click', v2SaveEdit);
+        document.getElementById('v2EditSave')!.addEventListener('click', v2SaveEdit);
     }
 
     const signOutBtn = document.getElementById('v2SignOut');
@@ -73,86 +74,86 @@ export async function initV2Admin() {
     });
 }
 
-function v2ShowLoginModal() {
-    document.getElementById('adminLoginOverlay').classList.add('active');
-    document.getElementById('v2AdminEmail').focus();
+function v2ShowLoginModal(): void {
+    document.getElementById('adminLoginOverlay')!.classList.add('active');
+    (document.getElementById('v2AdminEmail') as HTMLInputElement).focus();
 }
 
-function v2CloseLoginModal() {
-    document.getElementById('adminLoginOverlay').classList.remove('active');
-    document.getElementById('v2LoginError').textContent = '';
-    document.getElementById('v2AdminEmail').value = '';
-    document.getElementById('v2AdminPassword').value = '';
+function v2CloseLoginModal(): void {
+    document.getElementById('adminLoginOverlay')!.classList.remove('active');
+    document.getElementById('v2LoginError')!.textContent = '';
+    (document.getElementById('v2AdminEmail') as HTMLInputElement).value = '';
+    (document.getElementById('v2AdminPassword') as HTMLInputElement).value = '';
 }
 
-async function v2HandleLogin() {
-    const errorEl = document.getElementById('v2LoginError');
+async function v2HandleLogin(): Promise<void> {
+    const errorEl = document.getElementById('v2LoginError')!;
     errorEl.textContent = '';
     try {
         await adminSignIn(
-            document.getElementById('v2AdminEmail').value,
-            document.getElementById('v2AdminPassword').value
+            (document.getElementById('v2AdminEmail') as HTMLInputElement).value,
+            (document.getElementById('v2AdminPassword') as HTMLInputElement).value
         );
         v2CloseLoginModal();
-    } catch (err) {
-        errorEl.textContent = err.message;
+    } catch (err: unknown) {
+        errorEl.textContent = (err as Error).message;
     }
 }
 
-async function v2EnterAdminMode() {
+async function v2EnterAdminMode(): Promise<void> {
     setIsAdminMode(true);
     document.body.classList.add('admin-mode');
-    document.getElementById('adminStatsBanner').style.display = 'block';
+    (document.getElementById('adminStatsBanner') as HTMLElement).style.display = 'block';
     await v2LoadStats();
     await v2ReloadWithHidden();
 }
 
-function v2ExitAdminMode() {
+function v2ExitAdminMode(): void {
     setIsAdminMode(false);
     document.body.classList.remove('admin-mode');
-    document.getElementById('adminStatsBanner').style.display = 'none';
+    (document.getElementById('adminStatsBanner') as HTMLElement).style.display = 'none';
 
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(CACHE_TIME_KEY);
     loadData().then(() => renderCalendar());
 }
 
-function v2ShowSignOutConfirm() {
+function v2ShowSignOutConfirm(): void {
     if (confirm('관리자 모드를 종료하시겠습니까?')) {
         v2HandleSignOut();
     }
 }
 
-async function v2HandleSignOut() {
+async function v2HandleSignOut(): Promise<void> {
     await adminSignOut();
 }
 
-async function v2LoadStats() {
+async function v2LoadStats(): Promise<void> {
     try {
         const now = new Date().toISOString();
         const [totalRes, translatedRes, hiddenRes] = await Promise.all([
-            supabaseClient.from('poly_events')
+            supabaseClient!.from('poly_events')
                 .select('id', { count: 'exact', head: true })
                 .gte('end_date', now).eq('closed', false),
-            supabaseClient.from('poly_events')
+            supabaseClient!.from('poly_events')
                 .select('id', { count: 'exact', head: true })
                 .gte('end_date', now).eq('closed', false)
                 .not('title_ko', 'is', null),
-            supabaseClient.from('poly_events')
+            supabaseClient!.from('poly_events')
                 .select('id', { count: 'exact', head: true })
                 .gte('end_date', now).eq('hidden', true),
         ]);
         const total = totalRes.count || 0;
         const translated = translatedRes.count || 0;
         const hidden = hiddenRes.count || 0;
-        document.getElementById('v2StatInfo').textContent =
+        document.getElementById('v2StatInfo')!.textContent =
             `전체 ${total.toLocaleString()} | 번역 ${translated.toLocaleString()} | 미번역 ${(total - translated).toLocaleString()} | 숨김 ${hidden.toLocaleString()}`;
     } catch (e) {
         console.error('Admin stats error:', e);
     }
 }
 
-async function v2ReloadWithHidden() {
+async function v2ReloadWithHidden(): Promise<void> {
     if (!supabaseClient) return;
     try {
         const now = new Date().toISOString();
@@ -160,7 +161,7 @@ async function v2ReloadWithHidden() {
         upcomingWeeks.setDate(upcomingWeeks.getDate() + 5 + 21);
         const maxDate = upcomingWeeks.toISOString();
 
-        let allData = [];
+        let allData: PolyEvent[] = [];
         let offset = 0;
         let hasMore = true;
 
@@ -176,7 +177,7 @@ async function v2ReloadWithHidden() {
 
             if (error) throw error;
             if (data && data.length > 0) {
-                allData = allData.concat(data);
+                allData = allData.concat(data as PolyEvent[]);
                 offset += 1000;
                 hasMore = data.length === 1000;
             } else {
@@ -193,18 +194,18 @@ async function v2ReloadWithHidden() {
     }
 }
 
-function v2OpenEditModal(eventId) {
+function v2OpenEditModal(eventId: string): void {
     const event = allEvents.find(e => e.id === eventId);
     if (!event) return;
 
     setV2EditingEventId(eventId);
-    document.getElementById('v2EditTitleEn').textContent = event.title || '';
-    document.getElementById('v2EditTitleKo').value = event.title_ko || '';
-    document.getElementById('v2EditCategory').value = event.category || 'Uncategorized';
-    document.getElementById('v2EditDescription').textContent = event.description || '(설명 없음)';
-    document.getElementById('v2EditDescriptionKo').value = event.description_ko || '';
+    document.getElementById('v2EditTitleEn')!.textContent = event.title || '';
+    (document.getElementById('v2EditTitleKo') as HTMLInputElement).value = event.title_ko || '';
+    (document.getElementById('v2EditCategory') as HTMLSelectElement).value = event.category || 'Uncategorized';
+    document.getElementById('v2EditDescription')!.textContent = event.description || '(설명 없음)';
+    (document.getElementById('v2EditDescriptionKo') as HTMLTextAreaElement).value = event.description_ko || '';
 
-    const linkEl = document.getElementById('v2EditPolyLink');
+    const linkEl = document.getElementById('v2EditPolyLink') as HTMLAnchorElement | null;
     if (linkEl) {
         const slug = event.event_slug || event.slug || '';
         if (slug) {
@@ -215,28 +216,28 @@ function v2OpenEditModal(eventId) {
         }
     }
 
-    document.getElementById('v2EditOverlay').classList.add('active');
+    document.getElementById('v2EditOverlay')!.classList.add('active');
 }
 
-function v2CloseEditModal() {
+function v2CloseEditModal(): void {
     setV2EditingEventId(null);
-    document.getElementById('v2EditOverlay').classList.remove('active');
+    document.getElementById('v2EditOverlay')!.classList.remove('active');
 }
 
-async function v2SaveEdit() {
+async function v2SaveEdit(): Promise<void> {
     if (!v2EditingEventId) return;
-    const saveBtn = document.getElementById('v2EditSave');
+    const saveBtn = document.getElementById('v2EditSave') as HTMLButtonElement;
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
 
     try {
         const updates = {
-            title_ko: document.getElementById('v2EditTitleKo').value.trim() || null,
-            category: document.getElementById('v2EditCategory').value,
-            description_ko: document.getElementById('v2EditDescriptionKo').value.trim() || null,
+            title_ko: (document.getElementById('v2EditTitleKo') as HTMLInputElement).value.trim() || null,
+            category: (document.getElementById('v2EditCategory') as HTMLSelectElement).value,
+            description_ko: (document.getElementById('v2EditDescriptionKo') as HTMLTextAreaElement).value.trim() || null,
         };
 
-        const { error } = await supabaseClient
+        const { error } = await supabaseClient!
             .from('poly_events')
             .update(updates)
             .eq('id', v2EditingEventId);
@@ -254,21 +255,21 @@ async function v2SaveEdit() {
         localStorage.removeItem(CACHE_KEY);
         localStorage.removeItem(CACHE_TIME_KEY);
         bumpCacheVersion();
-    } catch (err) {
-        v2ShowToast('저장 실패: ' + err.message, 'error');
+    } catch (err: unknown) {
+        v2ShowToast('저장 실패: ' + (err as Error).message, 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
     }
 }
 
-async function v2ToggleHidden(eventId) {
+async function v2ToggleHidden(eventId: string): Promise<void> {
     const event = allEvents.find(e => e.id === eventId);
     if (!event) return;
 
     const newHidden = !event.hidden;
     try {
-        const { error } = await supabaseClient
+        const { error } = await supabaseClient!
             .from('poly_events')
             .update({ hidden: newHidden })
             .eq('id', eventId);
@@ -283,14 +284,14 @@ async function v2ToggleHidden(eventId) {
         localStorage.removeItem(CACHE_KEY);
         localStorage.removeItem(CACHE_TIME_KEY);
         bumpCacheVersion();
-    } catch (err) {
-        v2ShowToast('오류: ' + err.message, 'error');
+    } catch (err: unknown) {
+        v2ShowToast('오류: ' + (err as Error).message, 'error');
     }
 }
 
-async function bumpCacheVersion() {
+async function bumpCacheVersion(): Promise<void> {
     try {
-        await supabaseClient
+        await supabaseClient!
             .from('cache_meta')
             .update({ last_updated: new Date().toISOString() })
             .eq('id', 1);
@@ -299,7 +300,7 @@ async function bumpCacheVersion() {
     }
 }
 
-function v2ShowToast(message, type = 'success') {
+function v2ShowToast(message: string, type: 'success' | 'error' = 'success'): void {
     const toast = document.getElementById('v2Toast');
     if (!toast) return;
     toast.textContent = message;

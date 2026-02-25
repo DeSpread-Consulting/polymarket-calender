@@ -1,16 +1,17 @@
-import { tooltipElement, tooltipTimeout, setTooltipElement, setTooltipTimeout } from '../state.js';
-import { categoryColors } from '../constants.js';
-import { escapeHtml, formatCurrency, getMainProb, inferCategory } from '../utils.js';
-import { translations, currentLang, getTitle } from '../i18n.js';
+import { tooltipElement, tooltipTimeout, setTooltipElement, setTooltipTimeout } from '../state.ts';
+import { categoryColors } from '../constants.ts';
+import { escapeHtml, formatCurrency, getMainProb, inferCategory } from '../utils.ts';
+import { translations, currentLang, getTitle } from '../i18n.ts';
+import type { PolyEvent } from '../types.ts';
 
-export function initTooltip() {
+export function initTooltip(): void {
     const el = document.createElement('div');
     el.className = 'event-tooltip';
     document.body.appendChild(el);
     setTooltipElement(el);
 }
 
-export function showEventTooltip(event, eventData) {
+export function showEventTooltip(event: MouseEvent, eventData: PolyEvent): void {
     if (!tooltipElement || !eventData) return;
 
     if (tooltipTimeout) {
@@ -57,11 +58,11 @@ export function showEventTooltip(event, eventData) {
     positionTooltip(event);
 
     setTooltipTimeout(setTimeout(() => {
-        tooltipElement.classList.add('visible');
+        tooltipElement!.classList.add('visible');
     }, 300));
 }
 
-export function hideEventTooltip() {
+export function hideEventTooltip(): void {
     if (tooltipTimeout) {
         clearTimeout(tooltipTimeout);
     }
@@ -70,7 +71,7 @@ export function hideEventTooltip() {
     }
 }
 
-export function positionTooltip(event) {
+export function positionTooltip(event: MouseEvent): void {
     if (!tooltipElement) return;
 
     const padding = 10;
